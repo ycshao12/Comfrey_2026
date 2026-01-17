@@ -1,11 +1,3 @@
-"""
-Syntax Detector for Comfrey framework.
-Implements syntax error detection according to paper specifications.
-
-Section 4.4: Resolving Syntax Errors
-- Syntax-parser misalignment (Section 4.4.1)
-- Inconsistent lexical features (Section 4.4.2)
-"""
 
 import ast
 import dis
@@ -23,26 +15,14 @@ from .config import ComfreyConfig
 logger = logging.getLogger(__name__)
 
 class SyntaxDetector:
-    """
-    Detects syntax-related errors in AI outputs using AST and bytecode analysis.
-    
-    Implements the detection algorithms described in Comfrey paper Section 4.4.
-    """
-    
+
     def __init__(self, config: ComfreyConfig):
         self.config = config
-        self.session_language_patterns = {}  # Track language patterns across session
-        self.session_spelling_standard = None  # Track spelling standard (US/UK)
+        self.session_language_patterns = {}  
+        self.session_spelling_standard = None  
         
     def detect_parser_misalignment(self, output: Any, func_name: str) -> DetectionResult:
-        """
-        Detect syntax-parser misalignment according to paper Section 4.4.1.
-        
-        Implements low overhead design by proactively reusing the syntax checking module
-        of the compiler/parser to validate AI component outputs before they undergo actual processing.
-        Focuses on syntax requirements in branch edges for function's core functionality,
-        ignoring error-handling and fall-through edges.
-        """
+       
         try:
             output_str = str(output)
             violations = []
@@ -111,14 +91,7 @@ class SyntaxDetector:
             )
     
     def detect_lexical_inconsistency(self, output: Any, func_name: str) -> DetectionResult:
-        """
-        Detect inconsistent lexical features according to paper Section 4.4.2.
         
-        Focuses on linguistic uniformity of three features throughout a session:
-        1. Language usage (Unicode script detection + n-gram frequency analysis)
-        2. Language standard (American/British English)
-        3. Text structure (subheadings, lists, structural elements)
-        """
         try:
             output_str = str(output)
             violations = []
@@ -171,7 +144,6 @@ class SyntaxDetector:
             )
     
     def _looks_like_code(self, text: str) -> bool:
-        """Check if text appears to be code"""
         code_indicators = [
             r'\bdef\s+\w+\s*\(',  # Function definitions
             r'\bclass\s+\w+',     # Class definitions
@@ -189,15 +161,7 @@ class SyntaxDetector:
         return False
     
     def _detect_ast_violations(self, text: str) -> List[Dict[str, Any]]:
-        """
-        Detect AST violations for specific error types mentioned in paper.
-        
-        Focuses on errors common in LLM scenarios:
-        - Bracket and string literal mismatches
-        - Trailing commas
-        - Invalid operators
-        - Incomplete expressions
-        """
+       
         violations = []
         
         try:
@@ -241,14 +205,7 @@ class SyntaxDetector:
         return violations
     
     def _detect_language_usage_inconsistency(self, text: str) -> List[Dict[str, Any]]:
-        """
-        Detect language usage inconsistency using Unicode script detection.
-        
-        Implements the approach from paper Section 4.4.2:
-        - Uses Unicode script detection to identify character ranges (Latin, CJK, Arabic)
-        - Uses n-gram frequency analysis against language models to detect language switches
-        - Deactivates language usage examination in translations, linguistic discussion, and other typical multi-lingual scenarios
-        """
+       
         violations = []
         
         # Unicode script detection
@@ -282,13 +239,7 @@ class SyntaxDetector:
         return violations
     
     def _detect_spelling_standard_inconsistency(self, text: str) -> List[Dict[str, Any]]:
-        """
-        Detect spelling standard inconsistency using dictionary validation.
-        
-        Implements the approach from paper Section 4.4.2:
-        - Refers to a dictionary to examine whether phrases belong to the same standard variety (American/British English)
-        - Establishes the standard using the lexical features of the first user text input
-        """
+       
         violations = []
         
         # Common US/UK spelling differences
@@ -341,13 +292,7 @@ class SyntaxDetector:
         return violations
     
     def _detect_text_structure_inconsistency(self, text: str) -> List[Dict[str, Any]]:
-        """
-        Detect text structure inconsistency.
         
-        Implements the approach from paper Section 4.4.2:
-        - Examines the existence of subheadings, lists, and other structural elements
-        - Reports an error when any of the standard is violated
-        """
         violations = []
         
         lines = text.split('\n')
@@ -390,15 +335,7 @@ class SyntaxDetector:
         return violations
     
     def _is_legitimate_mixed_language(self, text: str) -> bool:
-        """
-        Check if mixed language usage is legitimate.
         
-        Recognizable patterns include:
-        - Translation indicators
-        - Code blocks
-        - Structured presentation formats
-        """
-        # Translation indicators
         translation_patterns = [
             r'\b(translation|version|original|translated)\b',
             r'\b(中文|English|日本語|한국어)\b'
@@ -419,11 +356,6 @@ class SyntaxDetector:
         return False
     
     def _detect_ngram_language_inconsistency(self, text: str) -> List[Dict[str, Any]]:
-        """
-        Detect language inconsistency using n-gram frequency analysis.
-        
-        Simplified implementation - in practice would use language models.
-        """
         violations = []
         
         # Simple n-gram analysis for common language patterns
@@ -448,10 +380,8 @@ class SyntaxDetector:
         return violations
     
     def _get_detected_languages(self, text: str) -> List[str]:
-        """Get detected languages in the text"""
         languages = []
         
-        # Unicode script detection
         scripts = set()
         for char in text:
             if char.isalpha():

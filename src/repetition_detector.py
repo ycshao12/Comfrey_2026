@@ -1,18 +1,10 @@
-"""
-Repetition Detector for Comfrey framework.
-Implements repetition error detection according to paper specifications.
 
-Section 4.5: Resolving Repetition Errors
-- Redundant software behavior (Section 4.5.1)
-- Redundant semantics (Section 4.5.2)
-"""
 
 from typing import Dict, List, Any, Optional, Tuple, Set
 from collections import deque, defaultdict
 import logging
 import re
 import hashlib
-# import numpy as np  # Commented out to avoid numpy compatibility issues
 from difflib import SequenceMatcher
 
 from .types import DetectionResult, ErrorType
@@ -21,39 +13,25 @@ from .config import ComfreyConfig
 logger = logging.getLogger(__name__)
 
 class RepetitionDetector:
-    """Detects repetition-related errors in AI outputs"""
     
     def __init__(self, config: ComfreyConfig):
         self.config = config
         self._init_detection_components()
     
     def _init_detection_components(self):
-        """Initialize detection components"""
-        # Sliding window for action history (size 10 from paper Section 4.5.1)
         self.action_history = deque(maxlen=self.config.history_window_size)
         
-        # Cache for deterministic action results
         self.deterministic_cache = {}
         
-        # Semantic similarity cache
         self.similarity_cache = {}
     
     def detect_software_behavior_redundancy(self, output: Any, func_name: str, 
                                           args: tuple, kwargs: dict, 
                                           execution_history: deque) -> DetectionResult:
-        """
-        Detect redundant software behavior according to paper Section 4.5.1.
-        
-        Maintains a history queue that records the last N tool/function invocations
-        controlled by the agent, their parameters, and corresponding outputs.
-        Reports redundancy if the same tool/function is invoked with the same parameters
-        and the function is stateless and deterministic.
-        """
+       
         try:
-            # Create action signature
             action_signature = self._create_action_signature(func_name, args, kwargs)
             
-            # Check against sliding window history
             redundant_actions = []
             for historical_action in self.action_history:
                 if self._is_identical_action(action_signature, historical_action):
@@ -61,7 +39,6 @@ class RepetitionDetector:
                     if self._is_deterministic_action(func_name, args, kwargs):
                         redundant_actions.append(historical_action)
             
-            # Also check execution_history for redundancy
             if execution_history:
                 for historical_item in execution_history:
                     if 'function_name' in historical_item:
@@ -146,16 +123,7 @@ class RepetitionDetector:
     
     def detect_semantic_redundancy(self, output: Any, func_name: str, 
                                  execution_history: deque) -> DetectionResult:
-        """
-        Detect redundant semantics according to paper Section 4.5.2.
-        
-        Uses the same similarity threshold τ=0.7 as context construction (Section 4.3.3).
-        Follows the two-stage similarity detection mechanism from paper.
-        Examines three dimensions:
-        1. Internal redundancy: two sentences in a response have similarity > τ
-        2. External redundancy: responses of two iterations have similarity > τ  
-        3. Contextual redundancy: similarity > τ with context
-        """
+     
         try:
             output_str = str(output)
             
@@ -203,7 +171,6 @@ class RepetitionDetector:
             )
     
     def _create_action_signature(self, func_name: str, args: tuple, kwargs: dict) -> str:
-        """Create unique signature for action"""
         # Convert args and kwargs to hashable representation
         args_str = str(args)
         kwargs_str = str(sorted(kwargs.items()))
@@ -215,17 +182,10 @@ class RepetitionDetector:
         return signature_hash
     
     def _is_identical_action(self, signature1: str, historical_action: Dict) -> bool:
-        """Check if two actions are identical"""
         return signature1 == historical_action['signature']
     
     def _is_deterministic_action(self, func_name: str, args: tuple, kwargs: dict) -> bool:
-        """
-        Check if action is deterministic (produces consistent results).
-        
-        Uses the patterns described in paper Section 4.5.1:
-        - Deterministic: data reading, parsing, fetching operations
-        - Non-deterministic: random generation, time-dependent operations, stateful creation
-        """
+   
         func_name_lower = func_name.lower()
         
         # Check for non-deterministic patterns first
@@ -247,19 +207,11 @@ class RepetitionDetector:
         return True
     
     def _get_current_timestamp(self) -> float:
-        """Get current timestamp"""
         import time
         return time.time()
     
     def _detect_internal_redundancy(self, output: str) -> Dict:
-        """
-        Detect internal redundancy where two sentences in a response have similarity > τ.
-        
-        Uses the same two-stage similarity detection mechanism as context construction:
-        1. First stage: TF-IDF similarity computation
-        2. Second stage: Sentence embedding similarity for low-scoring pairs
-        3. Reports redundancy if similarity > τ=0.7
-        """
+      
         sentences = self._split_into_sentences(output)
         
         if len(sentences) < 2:
@@ -267,7 +219,6 @@ class RepetitionDetector:
         
         redundant_pairs = []
         
-        # Stage 1: Compute TF-IDF similarity for all sentence pairs
         tfidf_scores = []
         for i in range(len(sentences)):
             for j in range(i + 1, len(sentences)):
@@ -282,7 +233,6 @@ class RepetitionDetector:
         if not tfidf_scores:
             return {'detected': False, 'severity': 0.0, 'pairs': []}
         
-        # Check for exact duplicates first (for test case)
         for item in tfidf_scores:
             if item['sentence1'].strip().lower() == item['sentence2'].strip().lower():
                 redundant_pairs.append({
@@ -295,7 +245,6 @@ class RepetitionDetector:
                 })
                 continue
         
-        # Find bottom quartile threshold as specified in paper
         scores = [item['score'] for item in tfidf_scores]
         scores.sort()
         bottom_quartile_idx = len(scores) // 4
@@ -337,18 +286,12 @@ class RepetitionDetector:
         }
     
     def _detect_external_redundancy(self, output: str, execution_history: deque) -> Dict:
-        """
-        Detect external redundancy where responses of two iterations have similarity > τ.
-        
-        Uses the same two-stage similarity detection mechanism as context construction.
-        Compares current output against recent history.
-        """
+     
         if not execution_history:
             return {'detected': False, 'severity': 0.0, 'matches': []}
         
         redundant_matches = []
         
-        # Stage 1: Compute TF-IDF similarity for all historical comparisons
         tfidf_scores = []
         for historical_item in execution_history:
             if 'processed_output' in historical_item:
@@ -363,13 +306,11 @@ class RepetitionDetector:
         if not tfidf_scores:
             return {'detected': False, 'severity': 0.0, 'matches': []}
         
-        # Find bottom quartile threshold as specified in paper
         scores = [item['score'] for item in tfidf_scores]
         scores.sort()
         bottom_quartile_idx = len(scores) // 4
         bottom_quartile_threshold = scores[bottom_quartile_idx] if bottom_quartile_idx < len(scores) else scores[-1]
         
-        # Stage 2: Sentence embedding similarity for low-scoring pairs
         for item in tfidf_scores:
             if item['score'] < bottom_quartile_threshold:
                 # Apply second-round examination using sentence embeddings
@@ -399,20 +340,11 @@ class RepetitionDetector:
         }
     
     def _detect_contextual_redundancy(self, output: str) -> Dict:
-        """
-        Detect contextual redundancy where output has similarity > τ with context.
         
-        Uses the same approach as context construction detection.
-        """
-        # For contextual redundancy, we need context information
-        # This would typically come from the RAG system or conversation history
-        # For now, we'll use a simplified approach
-        
-        # Check for verbose content indicators
         verbose_indicators = self._identify_verbose_indicators(output)
         
         detected = len(verbose_indicators) > 0
-        severity = len(verbose_indicators) / 10.0  # Normalize by expected indicators
+        severity = len(verbose_indicators) / 10.0  
         
         return {
             'detected': detected,
@@ -422,41 +354,21 @@ class RepetitionDetector:
         }
     
     def _split_into_sentences(self, text: str) -> List[str]:
-        """Split text into sentences"""
-        # Simple sentence splitting
         sentences = re.split(r'[.!?]+', text)
         return [s.strip() for s in sentences if s.strip()]
     
     def _compute_sentence_similarity(self, sentence1: str, sentence2: str) -> float:
-        """
-        Compute similarity between two sentences using two-stage approach.
-        
-        Stage 1: TF-IDF similarity
-        Stage 2: Sentence embedding similarity (if needed)
-        """
         # Stage 1: TF-IDF similarity
         tfidf_similarity = self._compute_tfidf_similarity(sentence1, sentence2)
-        
-        # If TF-IDF similarity is low, use sentence embeddings
-        if tfidf_similarity < 0.3:  # Threshold for second stage
+         embeddings
+        if tfidf_similarity < 0.3:  
             return self._compute_sentence_embedding_similarity(sentence1, sentence2)
         
         return tfidf_similarity
     
     def _compute_tfidf_similarity(self, text1: str, text2: str) -> float:
-        """Compute TF-IDF similarity between two texts"""
+
         try:
-            # Skip sklearn to avoid numpy compatibility issues
-            # from sklearn.feature_extraction.text import TfidfVectorizer
-            # from sklearn.metrics.pairwise import cosine_similarity
-            
-            # vectorizer = TfidfVectorizer(stop_words='english', max_features=1000)
-            # tfidf_matrix = vectorizer.fit_transform([text1, text2])
-            # similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
-            
-            # return float(similarity)
-            
-            # Fallback to simple word overlap
             words1 = set(text1.lower().split())
             words2 = set(text2.lower().split())
             
@@ -482,18 +394,11 @@ class RepetitionDetector:
             return len(intersection) / len(union) if union else 0.0
     
     def _compute_sentence_embedding_similarity(self, text1: str, text2: str) -> float:
-        """
-        Compute sentence embedding similarity using cosine similarity.
         
-        Uses sentence embeddings as described in paper, with 0.6B parameter model
-        for low overhead design.
-        """
         try:
-            # Use sentence-transformers for embedding computation
             from sentence_transformers import SentenceTransformer
             
-            # Use a lightweight model for low overhead (as mentioned in paper)
-            model_name = 'all-MiniLM-L6-v2'  # ~80MB model, similar to 0.6B parameter model
+            model_name = 'all-MiniLM-L6-v2'  
             model = SentenceTransformer(model_name)
             
             embeddings = model.encode([text1, text2])
@@ -506,7 +411,6 @@ class RepetitionDetector:
             return self._compute_tfidf_similarity(text1, text2)
     
     def _cosine_similarity(self, vec1, vec2) -> float:
-        """Compute cosine similarity between two vectors"""
         try:
             import numpy as np
             
@@ -533,7 +437,6 @@ class RepetitionDetector:
             return dot_product / (norm1 * norm2)
     
     def _identify_verbose_indicators(self, output: str) -> List[str]:
-        """Identify verbose content indicators"""
         indicators = []
         
         # Check for repetitive phrases
@@ -546,16 +449,14 @@ class RepetitionDetector:
         
         for pattern in repetitive_patterns:
             matches = re.findall(pattern, output, re.IGNORECASE)
-            if len(matches) > 2:  # More than 2 occurrences
+            if len(matches) > 2:  
                 indicators.append(f"repetitive_phrase: {pattern}")
         
-        # Check for overly long sentences
         sentences = self._split_into_sentences(output)
         long_sentences = [s for s in sentences if len(s.split()) > 50]
         if long_sentences:
             indicators.append(f"long_sentences: {len(long_sentences)}")
         
-        # Check for redundant information
         words = output.lower().split()
         word_freq = defaultdict(int)
         for word in words:
@@ -570,13 +471,11 @@ class RepetitionDetector:
 
 
 class RPCFeatureExtractor:
-    """RPC (Repetitive Pattern Classification) feature extractor"""
     
     def __init__(self, config: ComfreyConfig):
         self.config = config
     
     def extract_features(self, text: str) -> Dict:
-        """Extract multi-dimensional features for RPC analysis"""
         features = {
             'lexical': self._extract_lexical_features(text),
             'structural': self._extract_structural_features(text),
@@ -586,7 +485,6 @@ class RPCFeatureExtractor:
         return features
     
     def _extract_lexical_features(self, text: str) -> Dict:
-        """Extract lexical features (unigram and bigram frequency vectors)"""
         words = text.lower().split()
         
         # Unigram frequencies
@@ -650,17 +548,14 @@ class RPCFeatureExtractor:
         return semantic_indicators
     
     def _extract_topic_words(self, text: str) -> List[str]:
-        """Extract topic-relevant words"""
         words = text.lower().split()
         
-        # Simple topic word extraction (filter out stop words)
         stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
         topic_words = [word for word in words if word not in stop_words and len(word) > 3]
         
         return topic_words
     
     def _extract_sentiment_indicators(self, text: str) -> Dict:
-        """Extract sentiment indicators"""
         positive_words = ['good', 'great', 'excellent', 'positive', 'successful', 'effective']
         negative_words = ['bad', 'poor', 'negative', 'failed', 'error', 'problem']
         

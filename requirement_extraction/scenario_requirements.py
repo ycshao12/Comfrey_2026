@@ -1,8 +1,3 @@
-"""
-Scenario Requirements for Comfrey framework.
-Implements the 7 scenario-based requirements described in Comfrey paper.
-These requirements are independent of implementation and arise from user expectations.
-"""
 
 import logging
 from typing import Dict, List, Any, Optional, Set
@@ -12,29 +7,21 @@ from enum import Enum
 logger = logging.getLogger(__name__)
 
 class ScenarioDimension(Enum):
-    """Three dimensions of scenario requirements"""
     FORMAT = "format"
     SYNTAX = "syntax"
     REPETITION = "repetition"
 
 @dataclass
 class ScenarioRequirement:
-    """Represents a scenario-based requirement"""
     name: str
     dimension: ScenarioDimension
     description: str
     detection_criteria: Dict[str, Any]
     validation_rules: List[str] = field(default_factory=list)
-    priority: int = 1  # 1=high, 2=medium, 3=low
+    priority: int = 1  
     applicable_contexts: List[str] = field(default_factory=list)
 
 class ScenarioRequirementManager:
-    """
-    Manages the 7 scenario-based requirements from Comfrey paper.
-    
-    These requirements complement software expectations by ensuring outputs
-    meet user experience standards and application-specific quality criteria.
-    """
     
     def __init__(self):
         self.scenario_requirements = self._initialize_scenario_requirements()
@@ -42,45 +29,26 @@ class ScenarioRequirementManager:
     def get_applicable_requirements(self, 
                                   context: Dict[str, Any],
                                   output_type: str = "general") -> List[ScenarioRequirement]:
-        """
-        Get scenario requirements applicable to a specific context.
-        
-        Args:
-            context: Application context information
-            output_type: Type of LLM output (text, code, structured, etc.)
-            
-        Returns:
-            List of applicable scenario requirements
-        """
         applicable = []
         
         for requirement in self.scenario_requirements:
             if self._is_requirement_applicable(requirement, context, output_type):
                 applicable.append(requirement)
         
-        # Sort by priority (high priority first)
         applicable.sort(key=lambda req: req.priority)
         
         logger.debug(f"Found {len(applicable)} applicable scenario requirements")
         return applicable
     
     def get_requirements_by_dimension(self, dimension: ScenarioDimension) -> List[ScenarioRequirement]:
-        """Get all requirements for a specific dimension"""
         return [req for req in self.scenario_requirements if req.dimension == dimension]
     
     def get_all_requirements(self) -> List[ScenarioRequirement]:
-        """Get all scenario requirements"""
         return self.scenario_requirements.copy()
     
     def _initialize_scenario_requirements(self) -> List[ScenarioRequirement]:
-        """
-        Initialize the 7 scenario requirements described in Comfrey paper.
-        """
         requirements = []
-        
-        # FORMAT DIMENSION (3 requirements)
-        
-        # 1. Intact textual elements
+    
         requirements.append(ScenarioRequirement(
             name="intact_textual_elements",
             dimension=ScenarioDimension.FORMAT,
@@ -102,7 +70,6 @@ class ScenarioRequirementManager:
             applicable_contexts=["text_processing", "segmentation", "chunking", "rag_systems"]
         ))
         
-        # 2. Content relevance
         requirements.append(ScenarioRequirement(
             name="content_relevance",
             dimension=ScenarioDimension.FORMAT,
@@ -124,7 +91,6 @@ class ScenarioRequirementManager:
             applicable_contexts=["rag_systems", "context_construction", "information_retrieval"]
         ))
         
-        # 3. Cohesive context information
         requirements.append(ScenarioRequirement(
             name="cohesive_context_information",
             dimension=ScenarioDimension.FORMAT,
@@ -146,9 +112,7 @@ class ScenarioRequirementManager:
             applicable_contexts=["rag_systems", "context_construction", "document_assembly"]
         ))
         
-        # SYNTAX DIMENSION (2 requirements)
-        
-        # 4. Parser-compatible grammar
+
         requirements.append(ScenarioRequirement(
             name="parser_compatible_grammar",
             dimension=ScenarioDimension.SYNTAX,
@@ -170,7 +134,7 @@ class ScenarioRequirementManager:
             applicable_contexts=["code_generation", "structured_output", "compilation", "parsing"]
         ))
         
-        # 5. Consistent lexical features
+
         requirements.append(ScenarioRequirement(
             name="consistent_lexical_features",
             dimension=ScenarioDimension.SYNTAX,
@@ -192,9 +156,7 @@ class ScenarioRequirementManager:
             applicable_contexts=["text_generation", "document_creation", "content_writing"]
         ))
         
-        # REPETITION DIMENSION (2 requirements)
-        
-        # 6. No redundant software behavior
+   
         requirements.append(ScenarioRequirement(
             name="no_redundant_software_behavior",
             dimension=ScenarioDimension.REPETITION,
@@ -203,7 +165,7 @@ class ScenarioRequirementManager:
                 "action_repetition_threshold": 2,
                 "identical_parameters": True,
                 "deterministic_output": True,
-                "temporal_window": 10,  # seconds
+                "temporal_window": 10, 
                 "cache_validity": True
             },
             validation_rules=[
@@ -216,7 +178,6 @@ class ScenarioRequirementManager:
             applicable_contexts=["api_calls", "tool_usage", "function_execution", "agent_behavior"]
         ))
         
-        # 7. Succinct content (semantic redundancy)
         requirements.append(ScenarioRequirement(
             name="succinct_content",
             dimension=ScenarioDimension.REPETITION,
@@ -244,14 +205,11 @@ class ScenarioRequirementManager:
                                  requirement: ScenarioRequirement,
                                  context: Dict[str, Any],
                                  output_type: str) -> bool:
-        """
-        Check if a scenario requirement is applicable to the given context.
-        """
-        # Check if context matches applicable contexts
+        
         context_type = context.get('type', 'general')
         application_domain = context.get('domain', 'general')
         
-        # If requirement has specific applicable contexts, check them
+     
         if requirement.applicable_contexts:
             context_match = any(
                 ctx in context_type.lower() or 
@@ -262,29 +220,24 @@ class ScenarioRequirementManager:
             if not context_match:
                 return False
         
-        # Check dimension-specific applicability
+ 
         if requirement.dimension == ScenarioDimension.FORMAT:
-            # Format requirements apply to text and structured outputs
+           
             return output_type in ['text', 'structured', 'general', 'context']
         
         elif requirement.dimension == ScenarioDimension.SYNTAX:
-            # Syntax requirements apply to code and structured outputs
+    
             return output_type in ['code', 'structured', 'general', 'compilation']
         
         elif requirement.dimension == ScenarioDimension.REPETITION:
-            # Repetition requirements apply to all output types
+           
             return True
         
         return True
     
     def create_requirement_validators(self, 
                                    requirements: List[ScenarioRequirement]) -> Dict[str, callable]:
-        """
-        Create validator functions for the given requirements.
-        
-        Returns:
-            Dictionary mapping requirement names to validator functions
-        """
+       
         validators = {}
         
         for requirement in requirements:
@@ -295,16 +248,9 @@ class ScenarioRequirementManager:
         return validators
     
     def _create_validator_function(self, requirement: ScenarioRequirement) -> callable:
-        """
-        Create a validator function for a specific requirement.
-        """
+       
         def validator(output: Any, context: Dict[str, Any] = None) -> Dict[str, Any]:
-            """
-            Validate output against the scenario requirement.
-            
-            Returns:
-                Dictionary with validation results
-            """
+           
             result = {
                 'requirement_name': requirement.name,
                 'dimension': requirement.dimension.value,
@@ -315,7 +261,7 @@ class ScenarioRequirementManager:
             }
             
             try:
-                # Dispatch to specific validation logic
+          
                 if requirement.name == "intact_textual_elements":
                     result = self._validate_intact_textual_elements(output, requirement, context)
                 elif requirement.name == "content_relevance":
@@ -341,9 +287,8 @@ class ScenarioRequirementManager:
         
         return validator
     
-    # Specific validation methods for each requirement
     def _validate_intact_textual_elements(self, output: Any, requirement: ScenarioRequirement, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate intact textual elements requirement"""
+
         result = {
             'requirement_name': requirement.name,
             'dimension': requirement.dimension.value,
@@ -356,21 +301,20 @@ class ScenarioRequirementManager:
         output_str = str(output)
         criteria = requirement.detection_criteria
         
-        # Check word boundaries
+   
         if criteria.get('check_word_boundaries', True):
-            # Simple heuristic: check for incomplete words at boundaries
+     
             words = output_str.split()
             if words:
-                # Check first and last words for completeness
+          
                 first_word = words[0]
                 last_word = words[-1]
                 
-                # Check for hyphenated splits
+        
                 if first_word.startswith('-') or last_word.endswith('-'):
                     result['violations'].append("Hyphenated word split detected")
                     result['passed'] = False
                 
-                # Check for incomplete sentence fragments
                 if not any(output_str.strip().endswith(marker) for marker in criteria.get('boundary_markers', [])):
                     result['violations'].append("Incomplete sentence fragment")
                     result['confidence'] *= 0.8
@@ -381,22 +325,19 @@ class ScenarioRequirementManager:
         return result
     
     def _validate_content_relevance(self, output: Any, requirement: ScenarioRequirement, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate content relevance requirement"""
         result = {
             'requirement_name': requirement.name,
             'dimension': requirement.dimension.value,
             'passed': True,
-            'confidence': 0.8,  # Default confidence without deep analysis
+            'confidence': 0.8,  
             'violations': [],
             'details': {}
         }
         
-        # Simplified relevance check
         if context and 'query' in context:
             query = context['query']
             output_str = str(output)
             
-            # Simple keyword overlap check
             query_words = set(query.lower().split())
             output_words = set(output_str.lower().split())
             
@@ -415,7 +356,7 @@ class ScenarioRequirementManager:
         return result
     
     def _validate_cohesive_context(self, output: Any, requirement: ScenarioRequirement, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate cohesive context information requirement"""
+
         result = {
             'requirement_name': requirement.name,
             'dimension': requirement.dimension.value,
@@ -427,12 +368,11 @@ class ScenarioRequirementManager:
         
         output_str = str(output)
         
-        # Simple coherence check based on sentence transitions
+
         sentences = [s.strip() for s in output_str.split('.') if s.strip()]
         
         if len(sentences) > 1:
-            # Check for abrupt topic changes (simplified)
-            coherence_score = 0.8  # Default assumption
+            coherence_score = 0.8  
             
             threshold = requirement.detection_criteria.get('coherence_threshold', 0.7)
             if coherence_score < threshold:
@@ -446,7 +386,6 @@ class ScenarioRequirementManager:
         return result
     
     def _validate_parser_compatibility(self, output: Any, requirement: ScenarioRequirement, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate parser compatibility requirement"""
         result = {
             'requirement_name': requirement.name,
             'dimension': requirement.dimension.value,
@@ -458,15 +397,12 @@ class ScenarioRequirementManager:
         
         output_str = str(output)
         
-        # Check for common syntax issues
         try:
-            # Try JSON parsing if looks like JSON
             if output_str.strip().startswith(('{', '[')):
                 import json
                 json.loads(output_str)
                 result['details']['json_valid'] = True
             
-            # Try Python parsing if looks like code
             elif any(keyword in output_str for keyword in ['def ', 'class ', 'import ', 'from ']):
                 import ast
                 ast.parse(output_str)
@@ -481,7 +417,6 @@ class ScenarioRequirementManager:
         return result
     
     def _validate_lexical_consistency(self, output: Any, requirement: ScenarioRequirement, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate lexical consistency requirement"""
         result = {
             'requirement_name': requirement.name,
             'dimension': requirement.dimension.value,
@@ -493,7 +428,6 @@ class ScenarioRequirementManager:
         
         output_str = str(output)
         
-        # Check for mixed spelling standards (US vs UK)
         us_spellings = ['color', 'center', 'organize', 'realize']
         uk_spellings = ['colour', 'centre', 'organise', 'realise']
         
@@ -511,7 +445,7 @@ class ScenarioRequirementManager:
         return result
     
     def _validate_no_redundant_behavior(self, output: Any, requirement: ScenarioRequirement, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate no redundant software behavior requirement"""
+
         result = {
             'requirement_name': requirement.name,
             'dimension': requirement.dimension.value,
@@ -521,14 +455,12 @@ class ScenarioRequirementManager:
             'details': {}
         }
         
-        # This would require action history analysis
-        # For now, provide a placeholder implementation
+
         result['details']['note'] = "Requires action history for full validation"
         
         return result
     
     def _validate_succinct_content(self, output: Any, requirement: ScenarioRequirement, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate succinct content requirement"""
         result = {
             'requirement_name': requirement.name,
             'dimension': requirement.dimension.value,
@@ -540,11 +472,9 @@ class ScenarioRequirementManager:
         
         output_str = str(output)
         
-        # Simple redundancy check
         sentences = [s.strip() for s in output_str.split('.') if s.strip()]
         
         if len(sentences) > 1:
-            # Check for repeated phrases
             unique_sentences = set(sentences)
             redundancy_ratio = 1 - (len(unique_sentences) / len(sentences))
             

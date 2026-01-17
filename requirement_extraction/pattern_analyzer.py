@@ -1,9 +1,3 @@
-"""
-Pattern Analyzer for Comfrey framework.
-Based on SmartGear's change_code.py and extract.py pattern recognition methods.
-Implements pattern-based static analysis to extract specific requirements from code snippets.
-"""
-
 import ast
 import re
 import json
@@ -16,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RecognizedPattern:
-    """Represents a recognized pattern in code"""
     pattern_type: 'PatternType'
     confidence: float
     location: str
@@ -25,14 +18,12 @@ class RecognizedPattern:
 
 @dataclass
 class RequirementSpec:
-    """Represents a specific requirement specification"""
     requirement_type: str
     specification: Dict[str, Any]
     source_patterns: List[RecognizedPattern] = field(default_factory=list)
     confidence: float = 0.0
 
 class PatternType(Enum):
-    """Types of patterns that can be recognized"""
     JSON_SCHEMA = "json_schema"
     XML_SCHEMA = "xml_schema"
     POSITIONAL_TEMPLATE = "positional_template"
@@ -44,7 +35,6 @@ class PatternType(Enum):
 
 @dataclass
 class RecognizedPattern:
-    """Represents a recognized pattern in code"""
     pattern_type: PatternType
     confidence: float
     location: str
@@ -53,22 +43,12 @@ class RecognizedPattern:
 
 @dataclass
 class RequirementSpec:
-    """Specific requirement specification extracted from patterns"""
     requirement_type: str
     specification: Dict[str, Any]
     source_patterns: List[RecognizedPattern] = field(default_factory=list)
     confidence: float = 1.0
 
 class PatternAnalyzer:
-    """
-    Pattern analyzer based on SmartGear's code analysis methods.
-    
-    Extracts specific requirements from code snippets using:
-    1. Regex-based pattern matching
-    2. AST-based structural analysis
-    3. Heuristic-based pattern recognition
-    4. Context-aware requirement extraction
-    """
     
     def __init__(self):
         self.pattern_matchers = self._initialize_pattern_matchers()
@@ -76,15 +56,6 @@ class PatternAnalyzer:
         
     def analyze_consumption_points(self, 
                                  consumption_points: List[Dict[str, Any]]) -> List[RequirementSpec]:
-        """
-        Analyze consumption points to extract specific requirements.
-        
-        Args:
-            consumption_points: List of LLM output consumption points from data flow analysis
-            
-        Returns:
-            List of extracted requirement specifications
-        """
         logger.info(f"Analyzing {len(consumption_points)} consumption points")
         
         requirement_specs = []
@@ -105,10 +76,6 @@ class PatternAnalyzer:
         return consolidated_specs
     
     def _recognize_patterns(self, consumption_point: Dict[str, Any]) -> List[RecognizedPattern]:
-        """
-        Recognize patterns in a consumption point using multiple approaches.
-        Based on SmartGear's pattern recognition methods.
-        """
         patterns = []
         operation = consumption_point.get('operation', '')
         location = consumption_point.get('location', '')
@@ -130,9 +97,7 @@ class PatternAnalyzer:
     def _extract_requirements_from_pattern(self, 
                                          pattern: RecognizedPattern,
                                          consumption_point: Dict[str, Any]) -> List[RequirementSpec]:
-        """
-        Extract specific requirements from a recognized pattern.
-        """
+
         extractor = self.requirement_extractors.get(pattern.pattern_type)
         if not extractor:
             return []
@@ -140,10 +105,7 @@ class PatternAnalyzer:
         return extractor(pattern, consumption_point)
     
     def _consolidate_requirements(self, requirement_specs: List[RequirementSpec]) -> List[RequirementSpec]:
-        """
-        Consolidate and deduplicate similar requirements.
-        """
-        # Group requirements by type
+  
         grouped_requirements = {}
         for spec in requirement_specs:
             req_type = spec.requirement_type
@@ -151,7 +113,6 @@ class PatternAnalyzer:
                 grouped_requirements[req_type] = []
             grouped_requirements[req_type].append(spec)
         
-        # Consolidate within each group
         consolidated = []
         for req_type, specs in grouped_requirements.items():
             if len(specs) == 1:
@@ -164,9 +125,7 @@ class PatternAnalyzer:
         return consolidated
     
     def _initialize_pattern_matchers(self) -> Dict[PatternType, callable]:
-        """
-        Initialize pattern matchers based on SmartGear's approach.
-        """
+
         return {
             PatternType.JSON_SCHEMA: self._match_json_pattern,
             PatternType.XML_SCHEMA: self._match_xml_pattern,
@@ -179,9 +138,7 @@ class PatternAnalyzer:
         }
     
     def _initialize_requirement_extractors(self) -> Dict[PatternType, callable]:
-        """
-        Initialize requirement extractors for each pattern type.
-        """
+
         return {
             PatternType.JSON_SCHEMA: self._extract_json_requirements,
             PatternType.XML_SCHEMA: self._extract_xml_requirements,
@@ -193,9 +150,9 @@ class PatternAnalyzer:
             PatternType.ITERATION_PATTERN: self._extract_iteration_requirements
         }
     
-    # Pattern matchers (based on SmartGear's pattern recognition)
+
     def _match_json_pattern(self, operation: str, context: Dict[str, Any]) -> bool:
-        """Match JSON processing patterns"""
+
         json_patterns = [
             r'json\.loads\s*\(',
             r'\.json\s*\(\)',
@@ -203,14 +160,13 @@ class PatternAnalyzer:
             r'json\.load\s*\(',
             r'loads\s*\(',
             r'JSONDecodeError',
-            r'\.get\s*\(',  # Common JSON access pattern
-            r'\[[\'"]\w+[\'\"]\]'  # Dictionary key access
+            r'\.get\s*\(',  
+            r'\[[\'"]\w+[\'\"]\]'  
         ]
         
         return any(re.search(pattern, operation, re.IGNORECASE) for pattern in json_patterns)
     
     def _match_xml_pattern(self, operation: str, context: Dict[str, Any]) -> bool:
-        """Match XML processing patterns"""
         xml_patterns = [
             r'xml\.etree',
             r'BeautifulSoup',
@@ -220,30 +176,28 @@ class PatternAnalyzer:
             r'\.tag\b',
             r'\.text\b',
             r'\.attrib\b',
-            r'<\w+.*?>',  # XML tag pattern
+            r'<\w+.*?>',  
             r'ElementTree'
         ]
         
         return any(re.search(pattern, operation, re.IGNORECASE) for pattern in xml_patterns)
     
     def _match_positional_template(self, operation: str, context: Dict[str, Any]) -> bool:
-        """Match positional template patterns"""
         template_patterns = [
             r'\.format\s*\(',
             r'%\s*\(',
-            r'f["\'].*\{.*\}.*["\']',  # f-string
-            r'["\'].*\{.*\}.*["\']',   # format string
+            r'f["\'].*\{.*\}.*["\']',  
+            r'["\'].*\{.*\}.*["\']',  
             r'\.replace\s*\(',
             r'\.substitute\s*\(',
             r'Template\s*\(',
-            r'%\w+',  # % formatting
-            r'\{\w+\}'  # {} formatting
+            r'%\w+',  
+            r'\{\w+\}'  
         ]
         
         return any(re.search(pattern, operation, re.IGNORECASE) for pattern in template_patterns)
     
     def _match_text_segmentation(self, operation: str, context: Dict[str, Any]) -> bool:
-        """Match text segmentation patterns"""
         segmentation_patterns = [
             r'\.split\s*\(',
             r'\.splitlines\s*\(',
@@ -252,7 +206,7 @@ class PatternAnalyzer:
             r'textwrap\.',
             r'\.join\s*\(',
             r'len\s*\(',
-            r'[:]\s*\d+',  # Slicing
+            r'[:]\s*\d+',  
             r'chunk_size',
             r'max_length',
             r'segment',
@@ -262,7 +216,6 @@ class PatternAnalyzer:
         return any(re.search(pattern, operation, re.IGNORECASE) for pattern in segmentation_patterns)
     
     def _match_compilation_pattern(self, operation: str, context: Dict[str, Any]) -> bool:
-        """Match compilation/parsing patterns"""
         compilation_patterns = [
             r'compile\s*\(',
             r'ast\.parse\s*\(',
@@ -279,7 +232,6 @@ class PatternAnalyzer:
         return any(re.search(pattern, operation, re.IGNORECASE) for pattern in compilation_patterns)
     
     def _match_api_signature(self, operation: str, context: Dict[str, Any]) -> bool:
-        """Match API signature patterns"""
         api_patterns = [
             r'def\s+\w+\s*\(',
             r'class\s+\w+',
@@ -296,7 +248,6 @@ class PatternAnalyzer:
         return any(re.search(pattern, operation, re.IGNORECASE) for pattern in api_patterns)
     
     def _match_context_assembly(self, operation: str, context: Dict[str, Any]) -> bool:
-        """Match context assembly patterns"""
         context_patterns = [
             r'context',
             r'retrieve',
@@ -310,13 +261,12 @@ class PatternAnalyzer:
             r'assemble',
             r'\.append\s*\(',
             r'\.extend\s*\(',
-            r'\+\s*'  # String concatenation
+            r'\+\s*'  
         ]
         
         return any(re.search(pattern, operation, re.IGNORECASE) for pattern in context_patterns)
     
     def _match_iteration_pattern(self, operation: str, context: Dict[str, Any]) -> bool:
-        """Match iteration patterns"""
         iteration_patterns = [
             r'for\s+\w+\s+in',
             r'while\s+',
@@ -336,7 +286,6 @@ class PatternAnalyzer:
     
     # Requirement extractors
     def _extract_json_requirements(self, pattern: RecognizedPattern, context: Dict[str, Any]) -> List[RequirementSpec]:
-        """Extract JSON schema requirements"""
         requirements = []
         
         # Extract JSON schema hints from the code
@@ -360,7 +309,6 @@ class PatternAnalyzer:
         return requirements
     
     def _extract_xml_requirements(self, pattern: RecognizedPattern, context: Dict[str, Any]) -> List[RequirementSpec]:
-        """Extract XML schema requirements"""
         requirements = []
         
         # Extract XML schema hints
@@ -384,7 +332,6 @@ class PatternAnalyzer:
         return requirements
     
     def _extract_template_requirements(self, pattern: RecognizedPattern, context: Dict[str, Any]) -> List[RequirementSpec]:
-        """Extract positional template requirements"""
         requirements = []
         
         # Extract template structure
@@ -408,7 +355,6 @@ class PatternAnalyzer:
         return requirements
     
     def _extract_segmentation_requirements(self, pattern: RecognizedPattern, context: Dict[str, Any]) -> List[RequirementSpec]:
-        """Extract text segmentation requirements"""
         requirements = []
         
         # Extract segmentation parameters
@@ -433,7 +379,6 @@ class PatternAnalyzer:
         return requirements
     
     def _extract_compilation_requirements(self, pattern: RecognizedPattern, context: Dict[str, Any]) -> List[RequirementSpec]:
-        """Extract compilation/syntax requirements"""
         requirements = []
         
         # Extract compilation parameters
@@ -457,7 +402,6 @@ class PatternAnalyzer:
         return requirements
     
     def _extract_api_requirements(self, pattern: RecognizedPattern, context: Dict[str, Any]) -> List[RequirementSpec]:
-        """Extract API signature requirements"""
         requirements = []
         
         # Extract API signature information
@@ -481,7 +425,6 @@ class PatternAnalyzer:
         return requirements
     
     def _extract_context_requirements(self, pattern: RecognizedPattern, context: Dict[str, Any]) -> List[RequirementSpec]:
-        """Extract context assembly requirements"""
         requirements = []
         
         # Extract context assembly parameters
@@ -505,7 +448,6 @@ class PatternAnalyzer:
         return requirements
     
     def _extract_iteration_requirements(self, pattern: RecognizedPattern, context: Dict[str, Any]) -> List[RequirementSpec]:
-        """Extract iteration pattern requirements"""
         requirements = []
         
         # Extract iteration parameters
@@ -530,7 +472,6 @@ class PatternAnalyzer:
     
     # Helper methods for pattern analysis
     def _calculate_pattern_confidence(self, pattern_type: PatternType, operation: str) -> float:
-        """Calculate confidence score for pattern recognition"""
         base_confidence = 0.8
         
         # Boost confidence for explicit patterns
@@ -541,14 +482,12 @@ class PatternAnalyzer:
         elif pattern_type == PatternType.COMPILATION_TARGET and ('compile' in operation.lower() or 'ast.parse' in operation.lower()):
             base_confidence = 0.9
         
-        # Reduce confidence for ambiguous patterns
         if len(operation) < 10:
             base_confidence *= 0.8
         
         return min(base_confidence, 1.0)
     
     def _extract_pattern_details(self, pattern_type: PatternType, operation: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract detailed information about a recognized pattern"""
         details = {}
         
         if pattern_type == PatternType.JSON_SCHEMA:
@@ -562,9 +501,7 @@ class PatternAnalyzer:
         
         return details
     
-    # Analysis methods for extracting specific information
     def _analyze_json_usage(self, code: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze JSON usage to extract schema requirements"""
         hints = {
             "schema": {},
             "required_keys": [],
@@ -573,18 +510,15 @@ class PatternAnalyzer:
             "validation_rules": []
         }
         
-        # Extract key accesses
         key_accesses = re.findall(r'\[[\'"]([\w_]+)[\'\"]\]', code)
         hints["required_keys"] = list(set(key_accesses))
         
-        # Extract get() calls (optional keys)
         get_calls = re.findall(r'\.get\s*\(\s*[\'"]([\w_]+)[\'\"]\s*[,\)]', code)
         hints["optional_keys"] = list(set(get_calls))
         
         return hints
     
     def _analyze_xml_usage(self, code: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze XML usage to extract schema requirements"""
         hints = {
             "root_element": "root",
             "required_elements": [],
@@ -593,14 +527,13 @@ class PatternAnalyzer:
             "validation_rules": []
         }
         
-        # Extract find/findall calls
         find_calls = re.findall(r'\.find(?:all)?\s*\(\s*[\'"]([\w_]+)[\'\"]\s*\)', code)
         hints["required_elements"] = list(set(find_calls))
         
         return hints
     
     def _analyze_template_usage(self, code: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze template usage to extract template requirements"""
+
         hints = {
             "identifiers": [],
             "placeholders": [],
@@ -609,11 +542,9 @@ class PatternAnalyzer:
             "validation_rules": []
         }
         
-        # Extract format placeholders
         format_placeholders = re.findall(r'\{(\w+)\}', code)
         hints["placeholders"] = list(set(format_placeholders))
         
-        # Determine format style
         if '.format(' in code:
             hints["format_style"] = "str.format"
         elif 'f"' in code or "f'" in code:
@@ -624,7 +555,7 @@ class PatternAnalyzer:
         return hints
     
     def _analyze_segmentation_usage(self, code: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze segmentation usage to extract segmentation requirements"""
+   
         hints = {
             "boundary_markers": [],
             "chunk_size_min": 1,
@@ -635,11 +566,9 @@ class PatternAnalyzer:
             "validation_rules": []
         }
         
-        # Extract split delimiters
         split_delims = re.findall(r'\.split\s*\(\s*[\'"](.*?)[\'\"]\s*\)', code)
         hints["boundary_markers"] = list(set(split_delims))
         
-        # Extract size constraints
         size_numbers = re.findall(r'\d+', code)
         if size_numbers:
             hints["chunk_size_max"] = max(int(n) for n in size_numbers)
@@ -647,7 +576,7 @@ class PatternAnalyzer:
         return hints
     
     def _analyze_compilation_usage(self, code: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze compilation usage to extract syntax requirements"""
+
         hints = {
             "target_language": "python",
             "syntax_level": "statement",
@@ -657,7 +586,6 @@ class PatternAnalyzer:
             "validation_rules": []
         }
         
-        # Determine target language
         if 'compile(' in code:
             hints["target_language"] = "python"
         elif 'ast.parse' in code:
@@ -667,7 +595,7 @@ class PatternAnalyzer:
         return hints
     
     def _analyze_api_usage(self, code: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze API usage to extract signature requirements"""
+  
         hints = {
             "function_name": "unknown",
             "parameter_types": {},
@@ -677,7 +605,6 @@ class PatternAnalyzer:
             "validation_rules": []
         }
         
-        # Extract function name
         func_match = re.search(r'def\s+(\w+)\s*\(', code)
         if func_match:
             hints["function_name"] = func_match.group(1)
@@ -685,7 +612,7 @@ class PatternAnalyzer:
         return hints
     
     def _analyze_context_usage(self, code: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze context usage to extract coherence requirements"""
+   
         hints = {
             "coherence_threshold": 0.7,
             "similarity_metric": "cosine",
@@ -695,7 +622,6 @@ class PatternAnalyzer:
             "validation_rules": []
         }
         
-        # Extract threshold values
         threshold_matches = re.findall(r'(\d+\.?\d*)', code)
         if threshold_matches:
             hints["coherence_threshold"] = float(threshold_matches[0])
@@ -703,7 +629,7 @@ class PatternAnalyzer:
         return hints
     
     def _analyze_iteration_usage(self, code: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze iteration usage to extract iteration requirements"""
+   
         hints = {
             "iteration_type": "sequential",
             "expected_item_type": "any",
@@ -713,7 +639,6 @@ class PatternAnalyzer:
             "validation_rules": []
         }
         
-        # Determine iteration type
         if 'for' in code.lower():
             hints["iteration_type"] = "for_loop"
         elif 'while' in code.lower():
@@ -724,22 +649,17 @@ class PatternAnalyzer:
         return hints
     
     def _merge_similar_specs(self, specs: List[RequirementSpec]) -> RequirementSpec:
-        """Merge similar requirement specifications"""
         if not specs:
             return None
         
-        # Use the first spec as base
         merged = specs[0]
         
-        # Merge source patterns
         all_patterns = []
         for spec in specs:
             all_patterns.extend(spec.source_patterns)
         
-        # Calculate average confidence
         avg_confidence = sum(spec.confidence for spec in specs) / len(specs)
         
-        # Merge specifications (simple approach - could be more sophisticated)
         merged_specification = merged.specification.copy()
         for spec in specs[1:]:
             for key, value in spec.specification.items():

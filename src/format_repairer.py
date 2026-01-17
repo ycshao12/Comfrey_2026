@@ -1,7 +1,3 @@
-"""
-Format Repairer for Comfrey framework.
-Implements format error repair according to paper specifications.
-"""
 
 from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
@@ -18,15 +14,12 @@ from .config import ComfreyConfig
 logger = logging.getLogger(__name__)
 
 class FormatRepairer:
-    """Repairs format-related errors in AI outputs"""
     
     def __init__(self, config: ComfreyConfig):
         self.config = config
         self._init_repair_components()
     
     def _init_repair_components(self):
-        """Initialize repair components"""
-        # Template repair components
         self.template_cache = {}
         
         # Segmentation repair components
@@ -36,8 +29,6 @@ class FormatRepairer:
         self.coherence_cache = {}
     
     def _load_word_dictionary(self) -> set:
-        """Load word dictionary for completeness checking"""
-        # Basic English word dictionary (simplified)
         common_words = {
             'the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have', 'i', 'it', 'for', 'not', 'on', 'with',
             'he', 'as', 'you', 'do', 'at', 'this', 'but', 'his', 'by', 'from', 'they', 'we', 'say', 'her',
@@ -52,14 +43,6 @@ class FormatRepairer:
         return common_words
     
     def repair_template_discrepancy(self, output: Any, detection_result: DetectionResult) -> RepairResult:
-        """
-        Repair template discrepancy according to paper Section 4.3.1.
-        
-        Implements the repair approach for all three template types:
-        - For positional templates: cluster identifiers and re-order them to fit template requirement
-        - For structured-data templates: refine structure and apply type conversions
-        - For code-fenced templates: add missing delimiters and unify language identifiers
-        """
         try:
             output_str = str(output)
             template_type = detection_result.details.get('template_type', 'unknown')
@@ -67,18 +50,13 @@ class FormatRepairer:
             
             repair_actions = []
             
-            # Template-specific repair strategies
             if template_type == 'positional':
-                # For positional templates: cluster identifiers and re-order
                 repaired_output, actions = self._repair_positional_template(output_str, violations)
             elif template_type.startswith('structured_'):
-                # For structured-data templates: refine structure and apply type conversions
                 repaired_output, actions = self._repair_structured_template(output_str, template_type, violations)
             elif template_type == 'code_fenced':
-                # For code-fenced templates: fix delimiters, normalize language IDs, reconstruct boundaries
                 repaired_output, actions = self._repair_code_fenced_template(output_str, violations)
             else:
-                # Try to infer template type and repair
                 repaired_output, actions = self._repair_inferred_template(output_str, violations)
             
             repair_actions.extend(actions)
@@ -106,27 +84,22 @@ class FormatRepairer:
             )
     
     def _repair_positional_template(self, output: str, violations: List[Dict]) -> Tuple[str, List[str]]:
-        """Repair positional template discrepancy - cluster identifiers and re-order"""
         actions = []
         repaired_output = output
         
         # Extract identifiers from output
         output_identifiers = self._extract_identifiers(output)
         
-        # Standard template identifiers
         template_identifiers = ['Thought', 'Action', 'Observation']
         
-        # Cluster identifiers by string edit distance
         identifier_clusters = self._cluster_identifiers(output_identifiers, template_identifiers)
         actions.append(f"Clustered {len(output_identifiers)} identifiers based on string-edit distances")
         
-        # Reorder identifiers to match template
         if identifier_clusters:
             reordered_output = self._reorder_identifiers(output, identifier_clusters, template_identifiers)
             actions.append(f"Re-ordered identifiers (together with following slots) to fit template requirement")
             repaired_output = reordered_output
         
-        # Fix missing sections
         for violation in violations:
             if violation.get('type') == 'missing_section':
                 section = violation.get('issue', '').split(': ')[-1]
@@ -137,7 +110,6 @@ class FormatRepairer:
         return repaired_output, actions
     
     def _repair_structured_template(self, output: str, template_type: str, violations: List[Dict]) -> Tuple[str, List[str]]:
-        """Repair structured template discrepancy - refine structure and apply type conversions"""
         actions = []
         repaired_output = output
         
@@ -173,7 +145,6 @@ class FormatRepairer:
         return repaired_output, actions
     
     def _repair_code_fenced_template(self, output: str, violations: List[Dict]) -> Tuple[str, List[str]]:
-        """Repair code-fenced template - add missing closing delimiters, normalize language identifiers, reconstruct boundaries"""
         actions = []
         repaired_output = output
         
@@ -210,7 +181,6 @@ class FormatRepairer:
         return repaired_output, actions
     
     def _repair_inferred_template(self, output: str, violations: List[Dict]) -> Tuple[str, List[str]]:
-        """Repair template with inferred type"""
         actions = []
         
         # Try to infer template type from output
@@ -239,14 +209,11 @@ class FormatRepairer:
         return output.strip(), actions
     
     def _extract_identifiers(self, text: str) -> List[str]:
-        """Extract identifiers from text"""
-        # Simple regex to find identifiers (words followed by colons)
         pattern = r'\b(\w+):'
         identifiers = re.findall(pattern, text)
         return identifiers
     
     def _cluster_identifiers(self, output_ids: List[str], template_ids: List[str]) -> Dict[str, str]:
-        """Cluster identifiers by string edit distance"""
         clusters = {}
         
         for out_id in output_ids:
@@ -265,8 +232,6 @@ class FormatRepairer:
         return clusters
     
     def _reorder_identifiers(self, output: str, clusters: Dict[str, str], template_identifiers: List[str]) -> str:
-        """Reorder identifiers to match template"""
-        # Simple reordering based on template order
         template_order = template_identifiers
         
         # Create mapping from output to template order
@@ -287,7 +252,6 @@ class FormatRepairer:
         return '\n'.join(reordered_parts)
     
     def _fix_json_syntax(self, output: str, violations: List[Dict]) -> Tuple[str, List[str]]:
-        """Fix basic JSON syntax issues"""
         actions = []
         repaired_output = output
         
@@ -303,7 +267,6 @@ class FormatRepairer:
         return repaired_output, actions
     
     def _fix_xml_syntax(self, output: str, violations: List[Dict]) -> Tuple[str, List[str]]:
-        """Fix basic XML syntax issues"""
         actions = []
         repaired_output = output
         
@@ -316,7 +279,6 @@ class FormatRepairer:
         return repaired_output, actions
     
     def _repair_yaml_structure(self, output: str, violations: List[Dict]) -> Tuple[str, List[str]]:
-        """Repair YAML structure"""
         actions = []
         repaired_output = output
         
@@ -328,7 +290,6 @@ class FormatRepairer:
         return repaired_output, actions
     
     def _repair_json_structure(self, parsed_output: Dict, violations: List[Dict]) -> Tuple[Dict, List[str]]:
-        """Repair JSON structure - refine hierarchical structure and apply type conversions"""
         actions = []
         repaired = parsed_output.copy()
         
@@ -350,7 +311,6 @@ class FormatRepairer:
         return repaired, actions
     
     def _repair_xml_structure(self, root: ET.Element, violations: List[Dict]) -> Tuple[ET.Element, List[str]]:
-        """Repair XML structure - refine hierarchical structure and apply corrections"""
         actions = []
         
         # Process violations to understand what needs to be fixed
@@ -365,7 +325,6 @@ class FormatRepairer:
         return root, actions
     
     def _repair_basic_structure(self, output: str, expected_schema: Dict) -> Tuple[str, List[str]]:
-        """Basic structure repair for unrecognized formats"""
         actions = []
         repaired = output
         
@@ -383,13 +342,6 @@ class FormatRepairer:
         return repaired, actions
     
     def repair_data_segmentation(self, output: Any, detection_result: DetectionResult) -> RepairResult:
-        """
-        Repair data segmentation issues according to paper Section 4.3.2.
-        
-        Implements the repair approach:
-        - Tackles integrity problem by copying first/last word or sentence from adjacent segments
-        - Uses sliding-window strategy to merge and resplit adjacent segments when requirements are violated
-        """
         try:
             if isinstance(output, list):
                 segments = [str(item) for item in output]
@@ -399,17 +351,13 @@ class FormatRepairer:
             
             repair_actions = []
             
-            # Repair boundary markers
-            segments, boundary_actions = self._reposition_boundaries(segments)
-            repair_actions.extend(boundary_actions)
+            # Fragment bridging: copy first/last word or sentence from adjacent segments
+            segments, bridging_actions = self._apply_fragment_bridging(segments)
+            repair_actions.extend(bridging_actions)
             
-            # Repair word completeness
-            segments, word_actions = self._merge_split_words(segments)
-            repair_actions.extend(word_actions)
-            
-            # Repair sentence integrity
-            segments, sentence_actions = self._consolidate_fragments(segments)
-            repair_actions.extend(sentence_actions)
+            # Sliding-window re-segmentation: merge and resplit when requirements violated
+            segments, resegmentation_actions = self._apply_sliding_window_resegmentation(segments)
+            repair_actions.extend(resegmentation_actions)
             
             repaired_output = '\n'.join(segments)
             
@@ -434,8 +382,157 @@ class FormatRepairer:
                 metadata={"error": str(e)}
             )
     
+    def _apply_fragment_bridging(self, segments: List[str]) -> Tuple[List[str], List[str]]:
+        actions = []
+        repaired_segments = []
+        
+        i = 0
+        while i < len(segments):
+            segment = segments[i].strip()
+            if not segment:
+                i += 1
+                continue
+            
+            # Check if segment ends with incomplete word (hyphen or fragment)
+            if segment.endswith('-') or self._is_word_fragment(segment):
+                # Fragment bridging: copy from next segment
+                if i + 1 < len(segments):
+                    next_segment = segments[i + 1].strip()
+                    if next_segment:
+                        # Bridge the fragments
+                        bridged_segment = self._bridge_fragments(segment, next_segment)
+                        repaired_segments.append(bridged_segment)
+                        actions.append(f"Fragment bridging: '{segment}' + '{next_segment[:20]}...'")
+                        i += 2  # Skip next segment as it's been merged
+                        continue
+            
+            # Check if segment starts with incomplete word (continuation)
+            if i > 0 and self._is_word_continuation(segment):
+                # Fragment bridging: copy from previous segment
+                if repaired_segments:
+                    prev_segment = repaired_segments[-1]
+                    bridged_segment = self._bridge_fragments(prev_segment, segment)
+                    repaired_segments[-1] = bridged_segment
+                    actions.append(f"Fragment bridging: '{prev_segment[-20:]}...' + '{segment}'")
+                    i += 1
+                    continue
+            
+            repaired_segments.append(segment)
+            i += 1
+        
+        return repaired_segments, actions
+    
+    def _apply_sliding_window_resegmentation(self, segments: List[str]) -> Tuple[List[str], List[str]]:
+        actions = []
+        
+        # Get chunk size constraints from config
+        min_chunk_size = getattr(self.config, 'min_chunk_size', 50)
+        max_chunk_size = getattr(self.config, 'max_chunk_size', 2000)
+        
+        # Apply sliding window approach
+        window_size = 3  # Process 3 segments at a time
+        resegmented = []
+        
+        i = 0
+        while i < len(segments):
+            # Get current window
+            window_end = min(i + window_size, len(segments))
+            window_segments = segments[i:window_end]
+            
+            # Check if any segment violates size constraints
+            needs_resegmentation = False
+            for segment in window_segments:
+                segment_size = len(segment)
+                if segment_size < min_chunk_size or segment_size > max_chunk_size:
+                    needs_resegmentation = True
+                    break
+            
+            if needs_resegmentation:
+                # Merge and resplit the window
+                merged_content = ' '.join(window_segments)
+                new_segments = self._resplit_content(merged_content, min_chunk_size, max_chunk_size)
+                resegmented.extend(new_segments)
+                actions.append(f"Sliding-window resegmentation: {len(window_segments)} -> {len(new_segments)} segments")
+                i = window_end
+            else:
+                # Keep segments as is
+                resegmented.extend(window_segments)
+                i = window_end
+        
+        return resegmented, actions
+    
+    def _bridge_fragments(self, fragment1: str, fragment2: str) -> str:
+        if fragment1.endswith('-'):
+            fragment1 = fragment1[:-1]
+        
+        # Simple bridging: concatenate and clean up
+        bridged = fragment1 + fragment2
+        
+        # Clean up extra spaces
+        bridged = re.sub(r'\s+', ' ', bridged).strip()
+        
+        return bridged
+    
+    def _is_word_fragment(self, segment: str) -> bool:
+        words = segment.split()
+        if not words:
+            return False
+        
+        last_word = words[-1]
+        # Check if last word is incomplete (no vowels, too short, etc.)
+        if len(last_word) < 3 and not any(c in 'aeiouAEIOU' for c in last_word):
+            return True
+        
+        return False
+    
+    def _is_word_continuation(self, segment: str) -> bool:
+        words = segment.split()
+        if not words:
+            return False
+        
+        first_word = words[0]
+        # Check if first word looks like a continuation (starts with lowercase, no vowels, etc.)
+        if first_word[0].islower() and len(first_word) < 4:
+            return True
+        
+        return False
+    
+    def _resplit_content(self, content: str, min_size: int, max_size: int) -> List[str]:
+        sentences = re.split(r'[.!?]+', content)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        segments = []
+        current_segment = ""
+        
+        for sentence in sentences:
+            # Add sentence terminator back
+            sentence_with_punct = sentence + '.'
+            
+            # Check if adding this sentence would exceed max size
+            if len(current_segment + sentence_with_punct) > max_size:
+                # Finalize current segment if it meets min size
+                if len(current_segment) >= min_size:
+                    segments.append(current_segment.strip())
+                    current_segment = sentence_with_punct
+                else:
+                    # Current segment too small, force add this sentence
+                    current_segment += ' ' + sentence_with_punct
+                    segments.append(current_segment.strip())
+                    current_segment = ""
+            else:
+                # Add sentence to current segment
+                if current_segment:
+                    current_segment += ' ' + sentence_with_punct
+                else:
+                    current_segment = sentence_with_punct
+        
+        # Add remaining content
+        if current_segment.strip():
+            segments.append(current_segment.strip())
+        
+        return segments
+
     def _reposition_boundaries(self, segments: List[str]) -> Tuple[List[str], List[str]]:
-        """Reposition segment boundaries to align with sentence terminators"""
         actions = []
         repaired_segments = []
         
@@ -471,7 +568,6 @@ class FormatRepairer:
         return repaired_segments, actions
     
     def _merge_split_words(self, segments: List[str]) -> Tuple[List[str], List[str]]:
-        """Merge split words across segment boundaries"""
         actions = []
         repaired_segments = []
         
@@ -514,7 +610,6 @@ class FormatRepairer:
         return repaired_segments, actions
     
     def _consolidate_fragments(self, segments: List[str]) -> Tuple[List[str], List[str]]:
-        """Consolidate sentence fragments"""
         actions = []
         repaired_segments = []
         
@@ -554,7 +649,6 @@ class FormatRepairer:
         return repaired_segments, actions
     
     def _complete_sentence_fragment(self, fragment: str) -> str:
-        """Complete a sentence fragment by adding missing parts"""
         fragment = fragment.strip()
         
         # Special case for "This is an incomplete sent"
@@ -592,13 +686,10 @@ class FormatRepairer:
         return fragment
     
     def _is_valid_word(self, word: str) -> bool:
-        """Check if word is valid"""
         word_clean = re.sub(r'[^\w]', '', word.lower())
         return word_clean in self.word_dict or len(word_clean) > 8  # Long words likely valid
     
     def _is_sentence_fragment(self, segment: str) -> bool:
-        """Check if segment is a sentence fragment"""
-        # Simple heuristics for fragment detection
         words = segment.split()
         
         # Too short to be complete sentence
@@ -621,13 +712,6 @@ class FormatRepairer:
         return False
     
     def repair_context_construction(self, output: Any, detection_result: DetectionResult) -> RepairResult:
-        """
-        Repair context construction issues according to paper Section 4.3.3.
-        
-        Implements the repair approach using RAG re-ranking approaches:
-        - When a pair of data entries with low relevance is identified, removes the one that is less relevant to the user query
-        - Uses the similarity score to determine which entry to remove
-        """
         try:
             if isinstance(output, list):
                 context_segments = [str(item) for item in output]
@@ -696,7 +780,6 @@ class FormatRepairer:
             )
     
     def _identify_main_topic(self, segments: List[str]) -> str:
-        """Identify the main topic from segments"""
         if not segments:
             return ""
         
@@ -718,7 +801,6 @@ class FormatRepairer:
         return main_topic
     
     def _calculate_segment_relevance(self, segment: str, all_segments: List[str], main_topic: str = "") -> float:
-        """Calculate relevance score for a segment"""
         if not all_segments:
             return 1.0
         
@@ -741,7 +823,6 @@ class FormatRepairer:
         return base_score
     
     def _reorder_by_semantic_similarity(self, segments: List[str]) -> Tuple[List[str], List[str]]:
-        """Reorder segments by semantic similarity"""
         actions = []
         
         if len(segments) <= 1:
@@ -783,7 +864,6 @@ class FormatRepairer:
         return reordered, actions
     
     def _apply_topic_grouping(self, segments: List[str]) -> Tuple[List[str], List[str]]:
-        """Apply topic-based grouping"""
         actions = []
         
         # Extract keywords from each segment
@@ -825,7 +905,6 @@ class FormatRepairer:
         return grouped_segments, actions
     
     def _filter_low_coherence(self, segments: List[str]) -> Tuple[List[str], List[str]]:
-        """Filter segments with low coherence"""
         actions = []
         
         if len(segments) <= 1:
@@ -857,8 +936,6 @@ class FormatRepairer:
         return filtered_segments, actions
     
     def _calculate_semantic_similarity(self, text1: str, text2: str) -> float:
-        """Calculate semantic similarity between two texts"""
-        # Simple Jaccard similarity for now
         words1 = set(text1.lower().split())
         words2 = set(text2.lower().split())
         
@@ -871,8 +948,6 @@ class FormatRepairer:
         return len(intersection) / len(union)
     
     def _extract_keywords(self, text: str) -> set:
-        """Extract keywords from text"""
-        # Simple keyword extraction
         words = text.lower().split()
         # Filter out common stop words
         stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
@@ -880,7 +955,6 @@ class FormatRepairer:
         return keywords
     
     def _calculate_coherence_score(self, text1: str, text2: str) -> float:
-        """Calculate coherence score between adjacent segments"""
         alpha = self.config.coherence_alpha
         
         # Topic overlap (TF-IDF weighted keywords similarity)
@@ -895,8 +969,6 @@ class FormatRepairer:
         return coherence
     
     def _compute_topic_overlap(self, text1: str, text2: str) -> float:
-        """Compute topic overlap using TF-IDF weighted keywords"""
-        # Simplified topic overlap calculation
         keywords1 = self._extract_keywords(text1)
         keywords2 = self._extract_keywords(text2)
         
@@ -908,7 +980,6 @@ class FormatRepairer:
         return len(overlap) / max(len(keywords1), len(keywords2))
     
     def _compute_jaccard(self, text1: str, text2: str) -> float:
-        """Compute Jaccard coefficient"""
         words1 = set(text1.lower().split())
         words2 = set(text2.lower().split())
         
