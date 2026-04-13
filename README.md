@@ -2,6 +2,10 @@
 
 ## Project Overview
 
+This repository contains the artifact for the ICSE 2026 paper
+"Comfrey: Mitigating Integration Failures in LLM-enabled Software at Run-Time".
+The primary affiliation is Shanghai Innovation Institute.
+
 Comfrey is a runtime framework for preventing LLM integration failures. Implemented according to the methodology section (Section 4) of the paper, it serves as a middleware layer between AI components (LLM and RAG) and downstream software components, automatically detecting and adapting AI component outputs that violate format, syntax, and repetition requirements.
 
 ### Core Design Principles
