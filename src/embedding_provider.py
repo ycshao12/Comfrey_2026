@@ -21,12 +21,10 @@ class EmbeddingProvider:
         provider = self.config.embedding_provider
         if provider == "local_qwen":
             if self.config.strict_paper_mode:
-                raise ValueError("Paper mode uses Yunqiao/OpenAI-compatible embeddings, not local_qwen")
+                raise ValueError("Paper mode uses OpenAI-compatible embeddings, not local_qwen")
             return self._embed_with_sentence_transformers(texts)
         if provider in {"local", "local_sentence_transformers"}:
             return self._embed_with_sentence_transformers(texts)
-        if provider == "yunqiao":
-            return self._api_client.embeddings(texts)
         if provider == "openai_compatible":
             return self._api_client.embeddings(texts)
 

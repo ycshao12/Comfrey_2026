@@ -115,7 +115,7 @@ class OpenAICompatibleClient:
         )
         if not value:
             raise RuntimeError(
-                f"Yunqiao/OpenAI-compatible API base URL is required. Set "
+                f"OpenAI-compatible API base URL is required. Set "
                 f"config.api_base_url, ${self.config.api_base_url_env}, or api_url.txt."
             )
         return self._normalize_base_url(value)
@@ -128,7 +128,7 @@ class OpenAICompatibleClient:
         )
         if not value:
             raise RuntimeError(
-                f"Yunqiao/OpenAI-compatible API key is required. Set "
+                f"OpenAI-compatible API key is required. Set "
                 f"config.api_key, ${self.config.api_key_env}, or key.txt."
             )
         return value.removeprefix("Bearer ").strip()

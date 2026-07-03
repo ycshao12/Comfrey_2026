@@ -48,7 +48,7 @@ Comfrey is a runtime framework for preventing LLM integration failures. Implemen
 ### 3. Low-overhead Design
 
 - **Rule priority**: Prioritize computation-efficient rule-based techniques
-- **Lightweight models**: Paper mode uses the configured Yunqiao/OpenAI-compatible embedding endpoint
+- **Lightweight models**: Paper mode uses the configured OpenAI-compatible embedding endpoint
 - **Early termination**: Iteration-aware termination mechanism
 - **Two-stage detection**: TF-IDF first, then sentence embedding (only when necessary)
 
@@ -154,7 +154,7 @@ from src.comfrey_core import ComfreyFramework
 from src.config import ComfreyConfig
 
 config = ComfreyConfig.create_paper_config()
-# Yunqiao uses the OpenAI-compatible API shape documented by Apifox.
+# Paper mode uses an OpenAI-compatible API shape.
 # Base URL is read from ../api_url.txt by default, or set config.api_base_url directly.
 # API key is read from ../key.txt by default, or set config.api_key directly.
 config.embedding_model_name = "text-embedding-ada-002"
@@ -165,19 +165,19 @@ comfrey = ComfreyFramework(config)
 You can also set credentials without putting keys in source code:
 
 ```bash
-export YUNQIAO_BASE_URL="https://your-yunqiao-base-url"
-export YUNQIAO_API_KEY="<your-api-key>"
+export OPENAI_COMPAT_BASE_URL="https://your-api-base-url"
+export OPENAI_COMPAT_API_KEY="<your-api-key>"
 ```
 
-If `YUNQIAO_API_KEY` is not set, Comfrey reads the first token from `key.txt`
+If `OPENAI_COMPAT_API_KEY` is not set, Comfrey reads the first token from `key.txt`
 in the project or parent directory.
-If `YUNQIAO_BASE_URL` is not set, Comfrey reads the first token from `api_url.txt`
+If `OPENAI_COMPAT_BASE_URL` is not set, Comfrey reads the first token from `api_url.txt`
 in the project or parent directory.
 
 Paper-identical mode requires:
 
-- A Yunqiao/OpenAI-compatible embedding endpoint, defaulting to `POST /v1/embeddings` with `model` and `input`.
-- A Yunqiao/OpenAI-compatible chat completion endpoint, defaulting to `POST /v1/chat/completions`, for translator and grammar-checker repair paths.
+- An OpenAI-compatible embedding endpoint, defaulting to `POST /v1/embeddings` with `model` and `input`.
+- An OpenAI-compatible chat completion endpoint, defaulting to `POST /v1/chat/completions`, for translator and grammar-checker repair paths.
 - Static analysis dependencies from `requirements.txt`, including `pyan3`, `jedi`, `networkx`, and `beniget`.
 - Runtime instrumentation dependencies from `requirements.txt`, including `bytecode`, `spacy` with `en_core_web_sm`, and `pyenchant` backed by the system `enchant` library.
 - Optional local `translator_command` and `grammar_checker_command` may still be used instead of the chat endpoint.
@@ -197,22 +197,10 @@ result = wrapped_chain.invoke({"query": "..."})
 # Run basic functionality smoke test
 python smoke_test.py
 
-# Verify configured Yunqiao embedding/chat endpoints
-python yunqiao_check.py
-
-# Optional: run against the local OpenAI-compatible mock server first
-python mock_yunqiao_server.py
-# In another terminal, put http://127.0.0.1:8765 in ../api_url.txt and run:
-python yunqiao_check.py
-
 # Compile all framework modules
 python -m compileall src requirement_extraction
 ```
 
-The local mock server is only for bring-up. To switch to Yunqiao, replace the
-contents of `../api_url.txt` with the real Yunqiao base URL; `../key.txt` is read
-as the bearer token source.
-
 ### Dependency Notes
 
-Comfrey keeps the paper's low-overhead pipeline. Lightweight mode treats several heavy tools as optional at runtime; paper-identical mode requires the paper dependencies plus configured Yunqiao/OpenAI-compatible embedding and chat endpoints, and fails fast when they are unavailable.
+Comfrey keeps the paper's low-overhead pipeline. Lightweight mode treats several heavy tools as optional at runtime; paper-identical mode requires the paper dependencies plus configured OpenAI-compatible embedding and chat endpoints, and fails fast when they are unavailable.

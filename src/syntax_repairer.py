@@ -524,15 +524,15 @@ class SyntaxRepairer:
                     current_text = translated
                     repairs.append("Applied configured local translator for language usage consistency")
                 continue
-            if self.config.chat_provider in {"yunqiao", "openai_compatible"}:
+            if self.config.chat_provider == "openai_compatible":
                 translated = self._repair_language_with_api(current_text, violation)
                 if translated != current_text:
                     current_text = translated
-                    repairs.append("Applied Yunqiao translator for language usage consistency")
+                    repairs.append("Applied OpenAI-compatible translator for language usage consistency")
                 continue
             if self.config.strict_paper_mode:
                 raise RuntimeError(
-                    "Paper mode requires translator_command or Yunqiao chat configuration "
+                    "Paper mode requires translator_command or OpenAI-compatible chat configuration "
                     "for language usage repair"
                 )
 
@@ -567,13 +567,13 @@ class SyntaxRepairer:
             checked = self._run_text_filter(self.config.grammar_checker_command, current_text)
             if checked != current_text:
                 return checked, ["Applied configured grammar checker first suggestion"]
-        if violations and self.config.chat_provider in {"yunqiao", "openai_compatible"}:
+        if violations and self.config.chat_provider == "openai_compatible":
             checked = self._repair_grammar_with_api(current_text, violations)
             if checked != current_text:
-                return checked, ["Applied Yunqiao grammar checker first suggestion"]
+                return checked, ["Applied OpenAI-compatible grammar checker first suggestion"]
         if violations and self.config.strict_paper_mode:
             raise RuntimeError(
-                "Paper mode requires grammar_checker_command or Yunqiao chat configuration "
+                "Paper mode requires grammar_checker_command or OpenAI-compatible chat configuration "
                 "for grammar repair"
             )
         

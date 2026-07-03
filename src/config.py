@@ -28,10 +28,10 @@ class ComfreyConfig:
     embedding_model_name: str = "all-MiniLM-L6-v2"
     embedding_model_path: Optional[str] = None
     api_base_url: Optional[str] = None
-    api_base_url_env: str = "YUNQIAO_BASE_URL"
+    api_base_url_env: str = "OPENAI_COMPAT_BASE_URL"
     api_base_url_file: Optional[str] = "../api_url.txt"
     api_key: Optional[str] = None
-    api_key_env: str = "YUNQIAO_API_KEY"
+    api_key_env: str = "OPENAI_COMPAT_API_KEY"
     api_key_file: Optional[str] = "../key.txt"
     api_timeout_seconds: float = 60.0
     embedding_endpoint: str = "/v1/embeddings"
@@ -151,10 +151,10 @@ class ComfreyConfig:
             enable_syntax_detection=True,
             enable_repetition_detection=True,
             enable_embedding_similarity=True,
-            embedding_provider="yunqiao",
+            embedding_provider="openai_compatible",
             embedding_model_name="text-embedding-ada-002",
             embedding_model_size="0.6B",
-            chat_provider="yunqiao",
+            chat_provider="openai_compatible",
             chat_model_name="gpt-4.1-mini",
             strict_paper_mode=True,
             allow_lightweight_fallbacks=False,

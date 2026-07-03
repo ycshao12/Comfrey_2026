@@ -45,29 +45,29 @@ def main():
         pass
 
     paper_config = ComfreyConfig.create_paper_config()
-    assert paper_config.embedding_provider == "yunqiao"
+    assert paper_config.embedding_provider == "openai_compatible"
     assert paper_config.embedding_model_name == "text-embedding-ada-002"
-    assert paper_config.chat_provider == "yunqiao"
+    assert paper_config.chat_provider == "openai_compatible"
     assert paper_config.strict_paper_mode
     assert not paper_config.allow_lightweight_fallbacks
 
     client_config = ComfreyConfig.create_paper_config()
     client_config.api_key = "Bearer test-token"
-    client_config.api_base_url = "https://yunqiao.example.com/v1/chat/completions"
+    client_config.api_base_url = "https://api.example.test/v1/chat/completions"
     client = OpenAICompatibleClient(client_config)
     assert client._required_api_key() == "test-token"
     assert (
         client._build_url("/v1/chat/completions")
-        == "https://yunqiao.example.com/v1/chat/completions"
+        == "https://api.example.test/v1/chat/completions"
     )
     assert (
         client._build_url("/v1/embeddings")
-        == "https://yunqiao.example.com/v1/embeddings"
+        == "https://api.example.test/v1/embeddings"
     )
-    client_config.api_base_url = "yunqiao.example.com/v1"
+    client_config.api_base_url = "api.example.test/v1"
     assert (
         client._build_url("/v1/chat/completions")
-        == "https://yunqiao.example.com/v1/chat/completions"
+        == "https://api.example.test/v1/chat/completions"
     )
 
     paper_config.api_base_url = ""
@@ -81,7 +81,7 @@ def main():
     except RuntimeError as exc:
         assert "base URL is required" in str(exc)
     else:
-        raise AssertionError("paper mode must fail fast when Yunqiao API config is missing")
+        raise AssertionError("paper mode must fail fast when API config is missing")
 
     print("Comfrey smoke test passed")
     print(comfrey.get_statistics())
