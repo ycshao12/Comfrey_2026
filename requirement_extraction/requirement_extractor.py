@@ -1,3 +1,4 @@
+# Comfrey artifact source file.
 
 import os
 import sys

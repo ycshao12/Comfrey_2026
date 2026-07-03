@@ -1,3 +1,4 @@
+# Comfrey artifact source file.
 """
 Format Detector for Comfrey framework.
 Detects format-related errors in LLM outputs.

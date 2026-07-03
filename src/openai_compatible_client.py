@@ -1,3 +1,4 @@
+# Comfrey artifact source file.
 import json
 import os
 from pathlib import Path

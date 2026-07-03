@@ -5,7 +5,7 @@ LLM-enabled software. It sits between AI components, such as LLM calls or RAG
 pipelines, and downstream software components, then detects and repairs outputs
 that violate expected format, syntax, or repetition requirements.
 
-This repository contains the artifact for the ICSE 2026 paper
+This repository provides the artifact for the ICSE 2026 paper
 **"Comfrey: Mitigating Integration Failures in LLM-enabled Software at
 Run-Time"**.
 The primary affiliation for this artifact is Shanghai Innovation Institute.

@@ -1,3 +1,4 @@
+# Comfrey artifact source file.
 
 from typing import Dict, List, Any, Optional, Tuple, Set
 import logging

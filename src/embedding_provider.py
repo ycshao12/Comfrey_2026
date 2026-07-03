@@ -1,3 +1,4 @@
+# Comfrey artifact source file.
 from typing import List
 
 from .config import ComfreyConfig

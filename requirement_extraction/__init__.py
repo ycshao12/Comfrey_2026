@@ -1,3 +1,4 @@
+# Comfrey artifact source file.
 from .requirement_extractor import RequirementExtractor, RequirementExtractionResult, ExtractedRequirement, RequirementType
 from .data_flow_analyzer import DataFlowAnalyzer, DataFlowPath, LLMOutputConsumer
 from .pattern_analyzer import PatternAnalyzer, PatternType, RecognizedPattern, RequirementSpec

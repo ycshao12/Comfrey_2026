@@ -1,3 +1,4 @@
+# Comfrey artifact source file.
 import functools
 from typing import Any
 
