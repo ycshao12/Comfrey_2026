@@ -46,7 +46,6 @@ requirement_extraction/
   data_flow_analyzer.py
   pattern_analyzer.py
 
-smoke_test.py                  # Lightweight verification script
 requirements.txt
 ```
 
@@ -60,7 +59,6 @@ cd Comfrey_2026
 
 pip install -r requirements.txt
 python -m spacy download en_core_web_sm
-python smoke_test.py
 ```
 
 The spaCy model is required by paper-aligned checks that use syntactic-tree
@@ -164,10 +162,8 @@ result = wrapped_chain.invoke({"query": "..."})
 ## Verification
 
 ```bash
-python smoke_test.py
-python -m compileall src requirement_extraction smoke_test.py
+python -m compileall src requirement_extraction
 ```
 
-`smoke_test.py` checks the core instrumentation path, parser checks,
-repetition repair, LangChain-style wrapping, paper-mode configuration, and
-OpenAI-compatible URL/key handling without requiring real credentials.
+The compile check verifies that the framework modules and requirement
+extraction package import cleanly.
