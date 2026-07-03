@@ -8,6 +8,7 @@ that violate expected format, syntax, or repetition requirements.
 This repository contains the artifact for the ICSE 2026 paper
 **"Comfrey: Mitigating Integration Failures in LLM-enabled Software at
 Run-Time"**.
+The primary affiliation for this artifact is Shanghai Innovation Institute.
 
 ## Highlights
 
@@ -170,4 +171,3 @@ python -m compileall src requirement_extraction smoke_test.py
 `smoke_test.py` checks the core instrumentation path, parser checks,
 repetition repair, LangChain-style wrapping, paper-mode configuration, and
 OpenAI-compatible URL/key handling without requiring real credentials.
-
