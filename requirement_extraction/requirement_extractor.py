@@ -5,14 +5,31 @@ import ast
 import json
 import logging
 import collections
-import jedi
-import networkx as nx
-import beniget
-import numpy as np
+import re
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Set
 from dataclasses import dataclass, field
 from enum import Enum
+
+try:
+    import jedi
+except ImportError:
+    jedi = None
+
+try:
+    import networkx as nx
+except ImportError:
+    nx = None
+
+try:
+    import beniget
+except ImportError:
+    beniget = None
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 try:
     import pyan
@@ -49,22 +66,67 @@ class ExtractedRequirement:
 @dataclass
 class RequirementExtractionResult:
     requirements: List[ExtractedRequirement] = field(default_factory=list)
-    call_graph: nx.DiGraph = field(default_factory=nx.DiGraph)
+    call_graph: Any = field(default_factory=lambda: nx.DiGraph() if nx else SimpleDiGraph())
     llm_output_consumers: List[str] = field(default_factory=list)
     analysis_metadata: Dict[str, Any] = field(default_factory=dict)
+
+class SimpleDiGraph:
+    def __init__(self):
+        self._edges = {}
+        self._nodes = {}
+
+    def add_node(self, node, **attrs):
+        self._nodes.setdefault(node, {}).update(attrs)
+        self._edges.setdefault(node, {})
+
+    def add_edge(self, source, target, **attrs):
+        self.add_node(source)
+        self.add_node(target)
+        self._edges.setdefault(source, {})[target] = attrs
+
+    def nodes(self):
+        return list(self._nodes.keys())
+
+    def successors(self, node):
+        return list(self._edges.get(node, {}).keys())
+
+    def edges(self):
+        return [(source, target) for source, targets in self._edges.items() for target in targets]
+
+    def __len__(self):
+        return len(self._edges)
 
 class RequirementExtractor:
     
     def __init__(self, config: ComfreyConfig):
         self.config = config
-        self.call_graph = nx.DiGraph()
-        self.data_flow_graph = nx.DiGraph()
+        self._validate_paper_dependencies()
+        self.call_graph = nx.DiGraph() if nx else SimpleDiGraph()
+        self.data_flow_graph = nx.DiGraph() if nx else SimpleDiGraph()
         self.llm_output_consumers = []
         self.extracted_requirements = []
         
         self.template_patterns = self._initialize_template_patterns()
         self.syntax_patterns = self._initialize_syntax_patterns()
         self.segmentation_patterns = self._initialize_segmentation_patterns()
+
+    def _validate_paper_dependencies(self):
+        if not self.config.strict_paper_mode:
+            return
+        missing = []
+        if jedi is None:
+            missing.append("jedi")
+        if nx is None:
+            missing.append("networkx")
+        if beniget is None:
+            missing.append("beniget")
+        if not PYAN_AVAILABLE:
+            missing.append("pyan3")
+        if missing:
+            raise ImportError(
+                "Paper mode requires the static-analysis dependencies used in the paper: "
+                + ", ".join(missing)
+            )
         
     def extract_requirements_from_codebase(self, 
                                          target_directory: str,
@@ -104,26 +166,39 @@ class RequirementExtractor:
             if success:
                 logger.info("Successfully built call graph with Pyan3")
                 return
+            if self.config.strict_paper_mode:
+                raise RuntimeError("Paper mode requires successful Pyan3 call graph construction")
         
         logger.info("Using enhanced AST analysis for call graph")
         self._build_call_graph_with_ast(target_directory)
     
     def _build_call_graph_with_pyan3(self, target_directory: str) -> bool:
         try:
+            root_directory = os.path.abspath(target_directory)
             python_files = []
             for root, dirs, files in os.walk(target_directory):
                 for file in files:
                     if file.endswith('.py'):
-                        python_files.append(os.path.join(root, file))
+                        python_files.append(os.path.abspath(os.path.join(root, file)))
             
             if not python_files:
                 return False
             
-            analyzer = pyan.CallGraphVisitor(python_files)
-            analyzer.visit_all()
-            
-            for edge in analyzer.get_edges():
-                self.call_graph.add_edge(edge.source, edge.target)
+            pyan_logger = logging.getLogger(f"{__name__}.pyan3")
+            pyan_logger.setLevel(logging.WARNING)
+            analyzer = pyan.CallGraphVisitor(
+                python_files,
+                root=root_directory,
+                logger=pyan_logger
+            )
+
+            for source, targets in getattr(analyzer, 'uses_edges', {}).items():
+                for target in targets:
+                    self.call_graph.add_edge(str(source), str(target), type='uses')
+
+            for source, targets in getattr(analyzer, 'defines_edges', {}).items():
+                for target in targets:
+                    self.call_graph.add_edge(str(source), str(target), type='defines')
             
             self._extract_llm_info_from_pyan3(analyzer)
             
@@ -165,13 +240,27 @@ class RequirementExtractor:
     
         llm_patterns = ['openai', 'gpt', 'claude', 'llm', 'generate']
         
-        for node in analyzer.get_nodes():
-            if any(pattern in node.name.lower() for pattern in llm_patterns):
-                self.llm_output_consumers.append(node.name)
+        for node_groups in getattr(analyzer, 'nodes', {}).values():
+            nodes = node_groups if isinstance(node_groups, list) else [node_groups]
+            for node in nodes:
+                node_name = str(getattr(node, 'name', node))
+                if any(pattern in node_name.lower() for pattern in llm_patterns):
+                    self.llm_output_consumers.append({
+                        'function': node_name,
+                        'location': node_name,
+                        'operation': node_name,
+                        'context': {
+                            'type': 'llm_output_processing',
+                            'source': 'pyan3',
+                            'code': node_name
+                        }
+                    })
     
     def _analyze_def_use_chains_for_file(self, file_path: str, tree: ast.AST):
        
         try:
+            if beniget is None:
+                return
             duc = beniget.DefUseChains()
             duc.visit(tree)
             
@@ -264,6 +353,17 @@ class RequirementExtractor:
         logger.debug("Extracting requirements from consumer code")
         
         for consumer in self.llm_output_consumers:
+            if not isinstance(consumer, dict):
+                consumer = {
+                    'function': str(consumer),
+                    'location': str(consumer),
+                    'operation': str(consumer),
+                    'context': {
+                        'type': 'llm_output_processing',
+                        'source': 'legacy',
+                        'code': str(consumer)
+                    }
+                }
             operation = consumer.get('operation', '')
             
             self._extract_template_requirements(consumer)
@@ -549,27 +649,54 @@ class RequirementExtractor:
             self.data_flow_graph.add_edge(var, f"{var}_usage", operation='usage')
     
     def _extract_json_schema_hints(self, consumer: Dict[str, Any]) -> Dict[str, Any]:
-    
-        return {'type': 'object', 'properties': {}}
+        text = self._consumer_text(consumer)
+        properties = {}
+        for key in re.findall(r"\[['\"]([A-Za-z_][\w-]*)['\"]\]", text):
+            properties[key] = {"required": True}
+        for key in re.findall(r"\.get\(['\"]([A-Za-z_][\w-]*)['\"]", text):
+            properties.setdefault(key, {"required": False})
+        return {
+            'type': 'object' if properties else 'unknown',
+            'properties': properties,
+            'source': 'static_consumer_code'
+        }
     
     def _extract_xml_schema_hints(self, consumer: Dict[str, Any]) -> Dict[str, Any]:
-        return {'root_element': 'unknown', 'namespace': None}
+        text = self._consumer_text(consumer)
+        root_match = re.search(r"find(?:all)?\(['\"]/?([A-Za-z_][\w.-]*)", text)
+        return {
+            'root_element': root_match.group(1) if root_match else 'unknown',
+            'namespace': None,
+            'source': 'static_consumer_code'
+        }
     
     def _has_positional_template_pattern(self, operation: str) -> bool:
      
         return any(pattern in operation for pattern in ['.format(', '%', 'f"', "f'"])
     
     def _extract_positional_identifiers(self, consumer: Dict[str, Any]) -> List[str]:
-  
-        return []  
+        text = self._consumer_text(consumer)
+        identifiers = re.findall(r'\{([A-Za-z_][\w-]*)\}', text)
+        identifiers.extend(re.findall(r'%\(([A-Za-z_][\w-]*)\)', text))
+        return list(dict.fromkeys(identifiers))
     
     def _extract_boundary_markers(self, consumer: Dict[str, Any]) -> List[str]:
-    
-        return ['.', '!', '?', '\n', '\n\n']
+        text = self._consumer_text(consumer)
+        markers = []
+        for match in re.findall(r"\.split\((['\"])(.*?)\1\)", text):
+            markers.append(match[1])
+        if ".splitlines(" in text:
+            markers.append("\n")
+        return markers or ['.', '!', '?', '\n', '\n\n']
     
     def _extract_chunk_constraints(self, consumer: Dict[str, Any]) -> Dict[str, Any]:
-  
-        return {'max_size': 1000, 'min_size': 10}
+        text = self._consumer_text(consumer)
+        numbers = [int(value) for value in re.findall(r'\b(?:chunk_size|max_tokens|max_size|limit)\s*=\s*(\d+)', text)]
+        slice_limits = [int(value) for value in re.findall(r'\[:\s*(\d+)\s*\]', text)]
+        candidates = numbers + slice_limits
+        if candidates:
+            return {'max_size': min(candidates), 'source': 'static_consumer_code'}
+        return {'max_size': None, 'min_size': None, 'source': 'not_inferred'}
     
     def _extract_completeness_criteria(self, consumer: Dict[str, Any]) -> Dict[str, Any]:
   
@@ -584,16 +711,28 @@ class RequirementExtractor:
         return 'cosine' 
     
     def _extract_context_window(self, consumer: Dict[str, Any]) -> int:
-
-        return 5  
+        text = self._consumer_text(consumer)
+        match = re.search(r'\b(?:top_k|k|context_window)\s*=\s*(\d+)', text)
+        return int(match.group(1)) if match else 5  
     
     def _extract_syntax_level(self, consumer: Dict[str, Any]) -> str:
 
         return 'statement'  
     
     def _extract_api_signatures(self, consumer: Dict[str, Any]) -> List[str]:
+        text = self._consumer_text(consumer)
+        calls = re.findall(r'([A-Za-z_][\w.]+)\s*\(', text)
+        return list(dict.fromkeys(calls))
 
-        return []  
+    def _consumer_text(self, consumer: Dict[str, Any]) -> str:
+        context = consumer.get('context') or {}
+        parts = [
+            str(consumer.get('operation', '')),
+            str(consumer.get('location', '')),
+            str(context.get('code', '')),
+            str(context.get('source', '')),
+        ]
+        return "\n".join(part for part in parts if part)
 
     def _infer_output_variable(self, func_name: str, llm_call: str) -> Optional[str]:
 

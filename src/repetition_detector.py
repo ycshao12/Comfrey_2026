@@ -9,6 +9,7 @@ from difflib import SequenceMatcher
 
 from .types import DetectionResult, ErrorType
 from .config import ComfreyConfig
+from .embedding_provider import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,7 @@ class RepetitionDetector:
     
     def __init__(self, config: ComfreyConfig):
         self.config = config
+        self.embedding_provider = EmbeddingProvider(config)
         self._init_detection_components()
     
     def _init_detection_components(self):
@@ -56,35 +58,10 @@ class RepetitionDetector:
                                     'func_name': hist_func_name,
                                     'args': hist_args,
                                     'kwargs': hist_kwargs,
+                                    'original_output': historical_item.get('original_output'),
+                                    'processed_output': historical_item.get('processed_output'),
                                     'source': 'execution_history'
                                 })
-            
-            # Enhanced detection for testing and real scenarios
-            # Check if this function has been called before with same parameters
-            if self._is_deterministic_action(func_name, args, kwargs):
-                # Look for any previous call with same signature
-                for historical_action in self.action_history:
-                    if (historical_action.get('func_name') == func_name and
-                        str(historical_action.get('args', ())) == str(args) and
-                        str(historical_action.get('kwargs', {})) == str(kwargs)):
-                        redundant_actions.append(historical_action)
-                        break
-                
-                # For testing purposes, also check if this is a common deterministic function
-                # that might be called repeatedly
-                if func_name in ['read_file', 'search', 'query', 'get', 'fetch', 'parse']:
-                    # Simulate that this function was called before (for testing)
-                    if not redundant_actions:
-                        simulated_previous_call = {
-                            'signature': action_signature,
-                            'func_name': func_name,
-                            'args': args,
-                            'kwargs': kwargs,
-                            'output': f"Previous {func_name} result",
-                            'timestamp': self._get_current_timestamp() - 1
-                        }
-                        self.action_history.append(simulated_previous_call)
-                        redundant_actions.append(simulated_previous_call)
             
             # Add current action to history
             current_action = {
@@ -99,6 +76,7 @@ class RepetitionDetector:
             
             detected = len(redundant_actions) > 0
             severity = len(redundant_actions) / len(self.action_history) if self.action_history else 0.0
+            cached_output = self._get_cached_output_from_history(redundant_actions)
             
             return DetectionResult(
                 error_type=ErrorType.REPETITION_SOFTWARE_BEHAVIOR,
@@ -109,11 +87,14 @@ class RepetitionDetector:
                     "action_signature": action_signature,
                     "is_deterministic": self._is_deterministic_action(func_name, args, kwargs),
                     "window_size": len(self.action_history),
-                    "historical_matches": [action['signature'] for action in redundant_actions]
+                    "historical_matches": [action.get('signature', '') for action in redundant_actions],
+                    "cached_output": cached_output
                 }
             )
         except Exception as e:
             logger.error(f"Software behavior redundancy detection failed: {e}")
+            if self.config.strict_paper_mode or not self.config.allow_lightweight_fallbacks:
+                raise
             return DetectionResult(
                 error_type=ErrorType.REPETITION_SOFTWARE_BEHAVIOR,
                 detected=False,
@@ -122,7 +103,8 @@ class RepetitionDetector:
             )
     
     def detect_semantic_redundancy(self, output: Any, func_name: str, 
-                                 execution_history: deque) -> DetectionResult:
+                                 execution_history: deque,
+                                 context_text: Optional[str] = None) -> DetectionResult:
      
         try:
             output_str = str(output)
@@ -144,7 +126,7 @@ class RepetitionDetector:
                 severity = max(severity, external_redundancy['severity'])
             
             # 3. Contextual redundancy detection
-            contextual_redundancy = self._detect_contextual_redundancy(output_str)
+            contextual_redundancy = self._detect_contextual_redundancy(output_str, context_text)
             if contextual_redundancy['detected']:
                 violations.append(contextual_redundancy)
                 severity = max(severity, contextual_redundancy['severity'])
@@ -157,12 +139,19 @@ class RepetitionDetector:
                 severity=severity,
                 details={
                     "violations": violations,
+                    "redundancy_analysis": {
+                        "internal": internal_redundancy,
+                        "external": external_redundancy,
+                        "contextual": contextual_redundancy
+                    },
                     "similarity_threshold": self.config.similarity_threshold,
                     "detection_method": "two_stage_similarity"
                 }
             )
         except Exception as e:
             logger.error(f"Semantic redundancy detection failed: {e}")
+            if self.config.strict_paper_mode or not self.config.allow_lightweight_fallbacks:
+                raise
             return DetectionResult(
                 error_type=ErrorType.REPETITION_SEMANTICS,
                 detected=False,
@@ -182,7 +171,15 @@ class RepetitionDetector:
         return signature_hash
     
     def _is_identical_action(self, signature1: str, historical_action: Dict) -> bool:
-        return signature1 == historical_action['signature']
+        return signature1 == historical_action.get('signature')
+
+    def _get_cached_output_from_history(self, redundant_actions: List[Dict]) -> Optional[Any]:
+        for action in reversed(redundant_actions):
+            if 'processed_output' in action:
+                return action['processed_output']
+            if 'output' in action:
+                return action['output']
+        return None
     
     def _is_deterministic_action(self, func_name: str, args: tuple, kwargs: dict) -> bool:
    
@@ -244,6 +241,17 @@ class RepetitionDetector:
                     'type': 'exact_duplicate'
                 })
                 continue
+
+            if item['score'] >= self.config.similarity_threshold:
+                redundant_pairs.append({
+                    'sentence1': item['sentence1'],
+                    'sentence2': item['sentence2'],
+                    'tfidf_score': item['score'],
+                    'embedding_score': None,
+                    'similarity': item['score'],
+                    'type': 'lexical_duplicate'
+                })
+                continue
         
         scores = [item['score'] for item in tfidf_scores]
         scores.sort()
@@ -257,7 +265,7 @@ class RepetitionDetector:
                    for pair in redundant_pairs):
                 continue
                 
-            if item['score'] < bottom_quartile_threshold:
+            if item['score'] <= bottom_quartile_threshold:
                 # Apply second-round examination using sentence embeddings
                 embedding_score = self._compute_sentence_embedding_similarity(
                     item['sentence1'], item['sentence2']
@@ -312,7 +320,18 @@ class RepetitionDetector:
         bottom_quartile_threshold = scores[bottom_quartile_idx] if bottom_quartile_idx < len(scores) else scores[-1]
         
         for item in tfidf_scores:
-            if item['score'] < bottom_quartile_threshold:
+            if item['score'] >= self.config.similarity_threshold:
+                redundant_matches.append({
+                    'historical_output': item['historical_output'][:100] + "..." if len(item['historical_output']) > 100 else item['historical_output'],
+                    'tfidf_score': item['score'],
+                    'embedding_score': None,
+                    'similarity': item['score'],
+                    'timestamp': item['historical_item'].get('timestamp', 0),
+                    'redundant_history': item['historical_item']
+                })
+                continue
+
+            if item['score'] <= bottom_quartile_threshold:
                 # Apply second-round examination using sentence embeddings
                 embedding_score = self._compute_sentence_embedding_similarity(
                     output, item['historical_output']
@@ -325,7 +344,8 @@ class RepetitionDetector:
                         'tfidf_score': item['score'],
                         'embedding_score': embedding_score,
                         'similarity': embedding_score,
-                        'timestamp': item['historical_item'].get('timestamp', 0)
+                        'timestamp': item['historical_item'].get('timestamp', 0),
+                        'redundant_history': item['historical_item']
                     })
         
         detected = len(redundant_matches) > 0
@@ -335,21 +355,28 @@ class RepetitionDetector:
             'detected': detected,
             'severity': severity,
             'matches': redundant_matches,
+            'redundant_history': [match['redundant_history'] for match in redundant_matches if 'redundant_history' in match],
             'type': 'external_redundancy',
             'detection_method': 'two_stage_similarity'
         }
     
-    def _detect_contextual_redundancy(self, output: str) -> Dict:
+    def _detect_contextual_redundancy(self, output: str, context_text: Optional[str] = None) -> Dict:
         
         verbose_indicators = self._identify_verbose_indicators(output)
+        context_similarity = 0.0
+        if context_text:
+            context_similarity = self._compute_sentence_similarity(output, context_text)
+            if context_similarity >= self.config.similarity_threshold:
+                verbose_indicators.append(f"context_response_similarity: {context_similarity:.3f}")
         
         detected = len(verbose_indicators) > 0
-        severity = len(verbose_indicators) / 10.0  
+        severity = max(len(verbose_indicators) / 10.0, context_similarity if detected else 0.0)
         
         return {
             'detected': detected,
             'severity': severity,
             'verbose_indicators': verbose_indicators,
+            'context_similarity': context_similarity,
             'type': 'contextual_redundancy'
         }
     
@@ -360,7 +387,6 @@ class RepetitionDetector:
     def _compute_sentence_similarity(self, sentence1: str, sentence2: str) -> float:
         # Stage 1: TF-IDF similarity
         tfidf_similarity = self._compute_tfidf_similarity(sentence1, sentence2)
-         embeddings
         if tfidf_similarity < 0.3:  
             return self._compute_sentence_embedding_similarity(sentence1, sentence2)
         
@@ -369,19 +395,13 @@ class RepetitionDetector:
     def _compute_tfidf_similarity(self, text1: str, text2: str) -> float:
 
         try:
-            words1 = set(text1.lower().split())
-            words2 = set(text2.lower().split())
-            
-            if not words1 or not words2:
-                return 0.0
-            
-            intersection = words1.intersection(words2)
-            union = words1.union(words2)
-            
-            return len(intersection) / len(union) if union else 0.0
-            
-        except ImportError:
-            # Fallback to simple word overlap
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.metrics.pairwise import cosine_similarity
+
+            vectorizer = TfidfVectorizer(stop_words='english')
+            matrix = vectorizer.fit_transform([text1, text2])
+            return float(cosine_similarity(matrix[0:1], matrix[1:2])[0][0])
+        except Exception:
             words1 = set(text1.lower().split())
             words2 = set(text2.lower().split())
             
@@ -396,17 +416,11 @@ class RepetitionDetector:
     def _compute_sentence_embedding_similarity(self, text1: str, text2: str) -> float:
         
         try:
-            from sentence_transformers import SentenceTransformer
+            return float(self.embedding_provider.similarity(text1, text2))
             
-            model_name = 'all-MiniLM-L6-v2'  
-            model = SentenceTransformer(model_name)
-            
-            embeddings = model.encode([text1, text2])
-            similarity = self._cosine_similarity(embeddings[0], embeddings[1])
-            
-            return float(similarity)
-            
-        except ImportError:
+        except Exception:
+            if self.config.strict_paper_mode or not self.config.allow_lightweight_fallbacks:
+                raise
             # Fallback to TF-IDF similarity
             return self._compute_tfidf_similarity(text1, text2)
     

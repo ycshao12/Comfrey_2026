@@ -2,13 +2,41 @@
 import ast
 import logging
 import collections
-import networkx as nx
-import beniget
 from typing import Dict, List, Any, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
+try:
+    import networkx as nx
+except ImportError:
+    nx = None
+
+try:
+    import beniget
+except ImportError:
+    beniget = None
+
 logger = logging.getLogger(__name__)
+
+class SimpleDiGraph:
+    def __init__(self):
+        self._edges = {}
+        self._nodes = {}
+
+    def add_node(self, node, **attrs):
+        self._nodes.setdefault(node, {}).update(attrs)
+        self._edges.setdefault(node, {})
+
+    def add_edge(self, source, target, **attrs):
+        self.add_node(source)
+        self.add_node(target)
+        self._edges.setdefault(source, {})[target] = attrs
+
+    def nodes(self):
+        return list(self._nodes.keys())
+
+    def successors(self, node):
+        return list(self._edges.get(node, {}).keys())
 
 @dataclass
 class LLMOutputConsumer:
@@ -48,14 +76,14 @@ class DataFlowPath:
 
 class DataFlowAnalyzer:
     
-    def __init__(self, call_graph: nx.DiGraph):
+    def __init__(self, call_graph: Any):
         self.call_graph = call_graph
-        self.data_flow_graph = nx.DiGraph()
+        self.data_flow_graph = nx.DiGraph() if nx else SimpleDiGraph()
         self.data_flow_nodes = collections.defaultdict(list)
         self.variable_dependencies = collections.defaultdict(set)
         self.llm_output_variables = set()
         self.consumption_points = []
-        self.duc_analyzer = beniget.DefUseChains()
+        self.duc_analyzer = beniget.DefUseChains() if beniget else None
         
     def analyze_data_flow(self, 
                          target_directory: str,

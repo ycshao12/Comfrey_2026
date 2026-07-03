@@ -16,12 +16,34 @@ class ComfreyConfig:
     
     enable_ast_analysis: bool = True  
     enable_bytecode_analysis: bool = True
+    require_bytecode_module: bool = False
+    enable_langchain_adapter: bool = True
     max_repair_iterations: int = 3  
     repair_iteration_limit: int = 3  
     
     similarity_threshold: float = 0.7  
     enable_embedding_similarity: bool = True 
     embedding_model_size: str = "0.6B"  
+    embedding_provider: str = "local"
+    embedding_model_name: str = "all-MiniLM-L6-v2"
+    embedding_model_path: Optional[str] = None
+    api_base_url: Optional[str] = None
+    api_base_url_env: str = "YUNQIAO_BASE_URL"
+    api_base_url_file: Optional[str] = "../api_url.txt"
+    api_key: Optional[str] = None
+    api_key_env: str = "YUNQIAO_API_KEY"
+    api_key_file: Optional[str] = "../key.txt"
+    api_timeout_seconds: float = 60.0
+    embedding_endpoint: str = "/v1/embeddings"
+    chat_provider: str = "none"
+    chat_model_name: str = "gpt-4.1-mini"
+    chat_completion_endpoint: str = "/v1/chat/completions"
+    chat_temperature: float = 0.0
+    chat_max_tokens: int = 2048
+    strict_paper_mode: bool = False
+    allow_lightweight_fallbacks: bool = True
+    translator_command: Optional[List[str]] = None
+    grammar_checker_command: Optional[List[str]] = None
     
     
     enable_lightweight_coherence: bool = True  
@@ -88,6 +110,12 @@ class ComfreyConfig:
         
         if not (0.0 <= self.coherence_gamma <= 1.0):
             raise ValueError("coherence_gamma must be between 0.0 and 1.0")
+
+        if self.api_timeout_seconds <= 0:
+            raise ValueError("api_timeout_seconds must be positive")
+
+        if self.chat_max_tokens <= 0:
+            raise ValueError("chat_max_tokens must be positive")
     
     @classmethod
     def create_lightweight_config(cls) -> 'ComfreyConfig':
@@ -112,6 +140,36 @@ class ComfreyConfig:
             enable_detailed_logging=True,
             history_window_size=20,
             max_repair_iterations=5,
+            save_repair_history=True
+        )
+
+    @classmethod
+    def create_paper_config(cls) -> 'ComfreyConfig':
+        """Create the configuration matching the ICSE paper method."""
+        return cls(
+            enable_format_detection=True,
+            enable_syntax_detection=True,
+            enable_repetition_detection=True,
+            enable_embedding_similarity=True,
+            embedding_provider="yunqiao",
+            embedding_model_name="text-embedding-ada-002",
+            embedding_model_size="0.6B",
+            chat_provider="yunqiao",
+            chat_model_name="gpt-4.1-mini",
+            strict_paper_mode=True,
+            allow_lightweight_fallbacks=False,
+            history_window_size=10,
+            max_repair_iterations=3,
+            repair_iteration_limit=3,
+            similarity_threshold=0.7,
+            element_threshold=3,
+            enable_ast_analysis=True,
+            enable_bytecode_analysis=True,
+            require_bytecode_module=True,
+            enable_langchain_adapter=True,
+            enable_unicode_detection=True,
+            enable_ngram_analysis=True,
+            enable_language_standard_check=True,
             save_repair_history=True
         )
     

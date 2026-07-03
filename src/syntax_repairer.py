@@ -4,10 +4,12 @@ import ast
 import dis
 import re
 import logging
+import subprocess
 from typing import Dict, List, Any, Optional, Tuple
 
 from .types import DetectionResult, RepairResult, ErrorType
 from .config import ComfreyConfig
+from .openai_compatible_client import OpenAICompatibleClient
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,7 @@ class SyntaxRepairer:
     def __init__(self, config: ComfreyConfig):
         self.config = config
         self.repair_cache = {} if config.enable_repair_caching else None
+        self.api_client = OpenAICompatibleClient(config)
         
     def repair_parser_misalignment(self, output: Any, detection_result: DetectionResult) -> RepairResult:
         
@@ -66,6 +69,8 @@ class SyntaxRepairer:
             
         except Exception as e:
             logger.error(f"Error in syntax repair: {str(e)}")
+            if self.config.strict_paper_mode or not self.config.allow_lightweight_fallbacks:
+                raise
             return RepairResult(
                 success=False,
                 original_output=str(output),
@@ -107,6 +112,8 @@ class SyntaxRepairer:
             
         except Exception as e:
             logger.error(f"Error in lexical repair: {str(e)}")
+            if self.config.strict_paper_mode or not self.config.allow_lightweight_fallbacks:
+                raise
             return RepairResult(
                 success=False,
                 original_output=str(output),
@@ -153,13 +160,7 @@ class SyntaxRepairer:
                 if not node.body:
                     node.body = [ast.Pass()]
                     self.repairs_made.append(f"Added pass statement to empty function '{node.name}'")
-                
-                has_return = any(isinstance(child, ast.Return) for child in ast.walk(node))
-                if not has_return and node.name != '__init__':
-                    return_stmt = ast.Return(value=ast.Constant(value=None))
-                    node.body.append(return_stmt)
-                    self.repairs_made.append(f"Added return statement to function '{node.name}'")
-                
+
                 return self.generic_visit(node)
             
             def visit_Call(self, node):
@@ -511,9 +512,30 @@ class SyntaxRepairer:
         repairs = []
         current_text = text
         
-        language_violations = [v for v in violations if v.get("type") == "mixed_languages"]
+        language_violations = [
+            v for v in violations
+            if v.get("type") in ("mixed_languages", "mixed_language_usage", "ngram_language_inconsistency")
+        ]
         
         for violation in language_violations:
+            if self.config.translator_command:
+                translated = self._run_text_filter(self.config.translator_command, current_text)
+                if translated != current_text:
+                    current_text = translated
+                    repairs.append("Applied configured local translator for language usage consistency")
+                continue
+            if self.config.chat_provider in {"yunqiao", "openai_compatible"}:
+                translated = self._repair_language_with_api(current_text, violation)
+                if translated != current_text:
+                    current_text = translated
+                    repairs.append("Applied Yunqiao translator for language usage consistency")
+                continue
+            if self.config.strict_paper_mode:
+                raise RuntimeError(
+                    "Paper mode requires translator_command or Yunqiao chat configuration "
+                    "for language usage repair"
+                )
+
             scripts = violation.get("scripts", [])
             
             if 'LATIN' in scripts:
@@ -541,6 +563,19 @@ class SyntaxRepairer:
      
         repairs = []
         current_text = text
+        if violations and self.config.grammar_checker_command:
+            checked = self._run_text_filter(self.config.grammar_checker_command, current_text)
+            if checked != current_text:
+                return checked, ["Applied configured grammar checker first suggestion"]
+        if violations and self.config.chat_provider in {"yunqiao", "openai_compatible"}:
+            checked = self._repair_grammar_with_api(current_text, violations)
+            if checked != current_text:
+                return checked, ["Applied Yunqiao grammar checker first suggestion"]
+        if violations and self.config.strict_paper_mode:
+            raise RuntimeError(
+                "Paper mode requires grammar_checker_command or Yunqiao chat configuration "
+                "for grammar repair"
+            )
         
         grammar_violations = [v for v in violations if v.get("type") == "inconsistent_verb_tense"]
         
@@ -559,6 +594,42 @@ class SyntaxRepairer:
                     repairs.append("Converted present tense verbs to past tense")
         
         return current_text, repairs
+
+    def _run_text_filter(self, command: List[str], text: str) -> str:
+        result = subprocess.run(
+            command,
+            input=text,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True
+        )
+        return result.stdout.strip() or text
+
+    def _repair_language_with_api(self, text: str, violation: Dict[str, Any]) -> str:
+        scripts = ", ".join(violation.get("scripts", [])) or "mixed"
+        system_prompt = (
+            "You are a text normalization component in the Comfrey runtime. "
+            "Return only the repaired text, with no explanation."
+        )
+        user_prompt = (
+            "Repair language-usage inconsistency while preserving meaning, code blocks, "
+            "identifiers, data formats, and structure. Use the dominant language of the text.\n"
+            f"Detected scripts: {scripts}\n\n{text}"
+        )
+        return self.api_client.chat_completion(system_prompt, user_prompt) or text
+
+    def _repair_grammar_with_api(self, text: str, violations: List[Dict[str, Any]]) -> str:
+        system_prompt = (
+            "You are a grammar checker used by the Comfrey runtime. Return only the first "
+            "corrected version of the text, with no explanation."
+        )
+        user_prompt = (
+            "Fix grammatical inconsistency while preserving meaning, code blocks, identifiers, "
+            "data formats, and line structure as much as possible.\n"
+            f"Detected violations: {violations}\n\n{text}"
+        )
+        return self.api_client.chat_completion(system_prompt, user_prompt) or text
     
     def _validate_bytecode_compilation(self, text: str) -> bool:
         
@@ -618,6 +689,6 @@ class SyntaxRepairer:
     def _find_opening_bracket_insertion_point(self, text: str, end_pos: int) -> int:
     
         for i in range(end_pos - 1, -1, -1):
-            if text[i] in ' \t\n=+\-*/(':
+            if text[i] in ' \t\n=+-*/(':
                 return i + 1
         return 0 

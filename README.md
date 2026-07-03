@@ -40,7 +40,7 @@ Comfrey is a runtime framework for preventing LLM integration failures. Implemen
 - Extract templates, data block specifications, context construction rules, parser syntax
 
 #### Application Scenario Requirement Characterization
-- 7 scenario-driven requirements
+- 6 scenario-driven requirements
 - Format dimension: intact textual elements, content relevance
 - Syntax dimension: consistent lexical features
 - Repetition dimension: absence of unnecessary software behavior repetition, succinct content, context semantic redundancy
@@ -48,7 +48,7 @@ Comfrey is a runtime framework for preventing LLM integration failures. Implemen
 ### 3. Low-overhead Design
 
 - **Rule priority**: Prioritize computation-efficient rule-based techniques
-- **Lightweight models**: Use 0.6B parameter embedding model (all-MiniLM-L6-v2)
+- **Lightweight models**: Paper mode uses the configured Yunqiao/OpenAI-compatible embedding endpoint
 - **Early termination**: Iteration-aware termination mechanism
 - **Two-stage detection**: TF-IDF first, then sentence embedding (only when necessary)
 
@@ -65,23 +65,23 @@ Comfrey is a runtime framework for preventing LLM integration failures. Implemen
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd Comfrey_fixtool
+cd Comfrey_2026-main
 
 # Install dependencies
-pip install -r source_code/comfrey_code/requirements.txt
+pip install -r requirements.txt
 
-# Install spaCy English model
+# Optional: install spaCy English model for syntactic-tree segmentation checks
 python -m spacy download en_core_web_sm
 
 # Verify installation
-python source_code/comfrey_code/basic_function_test.py
+python smoke_test.py
 ```
 
 ### Basic Usage
 
 ```python
-from comfrey_code.src.comfrey_core import ComfreyFramework
-from comfrey_code.src.config import ComfreyConfig
+from src.comfrey_core import ComfreyFramework
+from src.config import ComfreyConfig
 
 # Create lightweight configuration
 config = ComfreyConfig.create_lightweight_config()
@@ -106,8 +106,8 @@ result = my_llm_function("Generate some code")
 ### Advanced Usage Example
 
 ```python
-from comfrey_code.src.comfrey_core import ComfreyFramework
-from comfrey_code.src.config import ComfreyConfig
+from src.comfrey_core import ComfreyFramework
+from src.config import ComfreyConfig
 
 # Create comprehensive configuration
 config = ComfreyConfig.create_comprehensive_config()
@@ -145,15 +145,74 @@ print(f"Format errors detected: {stats['format_errors_detected']}")
 print(f"Successful repairs: {stats['repairs_successful']}")
 ```
 
+### Paper-identical Mode
+
+Use `create_paper_config()` when you want the implementation path to match the paper method rather than the lightweight fallback mode:
+
+```python
+from src.comfrey_core import ComfreyFramework
+from src.config import ComfreyConfig
+
+config = ComfreyConfig.create_paper_config()
+# Yunqiao uses the OpenAI-compatible API shape documented by Apifox.
+# Base URL is read from ../api_url.txt by default, or set config.api_base_url directly.
+# API key is read from ../key.txt by default, or set config.api_key directly.
+config.embedding_model_name = "text-embedding-ada-002"
+config.chat_model_name = "gpt-4.1-mini"
+comfrey = ComfreyFramework(config)
+```
+
+You can also set credentials without putting keys in source code:
+
+```bash
+export YUNQIAO_BASE_URL="https://your-yunqiao-base-url"
+export YUNQIAO_API_KEY="<your-api-key>"
+```
+
+If `YUNQIAO_API_KEY` is not set, Comfrey reads the first token from `key.txt`
+in the project or parent directory.
+If `YUNQIAO_BASE_URL` is not set, Comfrey reads the first token from `api_url.txt`
+in the project or parent directory.
+
+Paper-identical mode requires:
+
+- A Yunqiao/OpenAI-compatible embedding endpoint, defaulting to `POST /v1/embeddings` with `model` and `input`.
+- A Yunqiao/OpenAI-compatible chat completion endpoint, defaulting to `POST /v1/chat/completions`, for translator and grammar-checker repair paths.
+- Static analysis dependencies from `requirements.txt`, including `pyan3`, `jedi`, `networkx`, and `beniget`.
+- Runtime instrumentation dependencies from `requirements.txt`, including `bytecode`, `spacy` with `en_core_web_sm`, and `pyenchant` backed by the system `enchant` library.
+- Optional local `translator_command` and `grammar_checker_command` may still be used instead of the chat endpoint.
+
+In this mode, Comfrey raises an error when a paper dependency is missing instead of silently falling back to a simplified implementation.
+
+LangChain-style components can be wrapped through the adapter:
+
+```python
+wrapped_chain = comfrey.instrument_langchain(chain, name="retrieval_chain")
+result = wrapped_chain.invoke({"query": "..."})
+```
+
 ### Run Examples
 
 ```bash
-# Run basic functionality test
-python source_code/comfrey_code/basic_function_test.py
+# Run basic functionality smoke test
+python smoke_test.py
 
-# Run usage example
-python source_code/comfrey_code/example_usage.py
+# Verify configured Yunqiao embedding/chat endpoints
+python yunqiao_check.py
 
-# Run paper test
-python source_code/comfrey_code/final_paper_test.py
+# Optional: run against the local OpenAI-compatible mock server first
+python mock_yunqiao_server.py
+# In another terminal, put http://127.0.0.1:8765 in ../api_url.txt and run:
+python yunqiao_check.py
+
+# Compile all framework modules
+python -m compileall src requirement_extraction
 ```
+
+The local mock server is only for bring-up. To switch to Yunqiao, replace the
+contents of `../api_url.txt` with the real Yunqiao base URL; `../key.txt` is read
+as the bearer token source.
+
+### Dependency Notes
+
+Comfrey keeps the paper's low-overhead pipeline. Lightweight mode treats several heavy tools as optional at runtime; paper-identical mode requires the paper dependencies plus configured Yunqiao/OpenAI-compatible embedding and chat endpoints, and fails fast when they are unavailable.

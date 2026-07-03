@@ -75,13 +75,15 @@ class FormatRepairer:
             )
         except Exception as e:
             logger.error(f"Template repair failed: {e}")
+            if self.config.strict_paper_mode or not self.config.allow_lightweight_fallbacks:
+                raise
         return RepairResult(
             success=False,
             original_output=str(output),
             repaired_output=str(output),
             repair_actions=[],
-                metadata={"error": str(e)}
-            )
+            metadata={"error": str(e)}
+        )
     
     def _repair_positional_template(self, output: str, violations: List[Dict]) -> Tuple[str, List[str]]:
         actions = []
@@ -171,12 +173,9 @@ class FormatRepairer:
                 actions.append("Normalized language identifiers (e.g., unifying 'python' and 'py')")
                 
             elif violation_type == 'empty_code_block':
-                # Reconstruct incomplete code block boundaries
-                # Find empty code blocks and add placeholder content
-                empty_blocks = re.findall(r'```\w*\n\s*```', repaired_output)
-                if empty_blocks:
-                    repaired_output = re.sub(r'```(\w*)\n\s*```', r'```\1\n# Code placeholder\n```', repaired_output)
-                    actions.append("Reconstructed incomplete code block boundaries with placeholder content")
+                # The paper repairs code-fenced templates by restoring delimiters
+                # and boundaries, not by inventing code content.
+                actions.append("Preserved empty code block; no synthetic code inserted")
         
         return repaired_output, actions
     
@@ -374,13 +373,15 @@ class FormatRepairer:
             )
         except Exception as e:
             logger.error(f"Data segmentation repair failed: {e}")
+            if self.config.strict_paper_mode or not self.config.allow_lightweight_fallbacks:
+                raise
         return RepairResult(
             success=False,
             original_output=str(output),
             repaired_output=str(output),
             repair_actions=[],
-                metadata={"error": str(e)}
-            )
+            metadata={"error": str(e)}
+        )
     
     def _apply_fragment_bridging(self, segments: List[str]) -> Tuple[List[str], List[str]]:
         actions = []
@@ -720,20 +721,29 @@ class FormatRepairer:
                 context_segments = str(output).split('\n')
             
             repair_actions = []
+            query = detection_result.details.get('query') or detection_result.details.get('user_query', '')
             
             # Stage 1: Identify and remove irrelevant content
-            # Look for segments that don't match the main topic
-            main_topic = self._identify_main_topic(context_segments)
-            filtered_segments = []
-            
-            for segment in context_segments:
-                if segment.strip():
-                    relevance_score = self._calculate_segment_relevance(segment, context_segments, main_topic)
-                    if relevance_score >= self.config.similarity_threshold:
-                        filtered_segments.append(segment)
-                    else:
-                        repair_actions.append(f"Removed low-relevance segment: '{segment[:50]}...' (score: {relevance_score:.3f})")
-            
+            main_topic = query or self._identify_main_topic(context_segments)
+            filtered_segments = self._remove_less_query_relevant_pairs(
+                context_segments,
+                detection_result.details.get('violations', []),
+                query,
+                repair_actions
+            )
+            if filtered_segments is None:
+                filtered_segments = []
+                for segment in context_segments:
+                    if segment.strip():
+                        if query:
+                            relevance_score = self._calculate_query_relevance(segment, query)
+                        else:
+                            relevance_score = self._calculate_segment_relevance(segment, context_segments, main_topic)
+                        if relevance_score >= self.config.similarity_threshold:
+                            filtered_segments.append(segment)
+                        else:
+                            repair_actions.append(f"Removed low-relevance segment: '{segment[:50]}...' (score: {relevance_score:.3f})")
+
             context_segments = filtered_segments
             
             # Stage 2: Reorder segments by semantic similarity
@@ -771,6 +781,8 @@ class FormatRepairer:
             )
         except Exception as e:
             logger.error(f"Context construction repair failed: {e}")
+            if self.config.strict_paper_mode or not self.config.allow_lightweight_fallbacks:
+                raise
             return RepairResult(
                 success=False,
                 original_output=str(output),
@@ -778,6 +790,46 @@ class FormatRepairer:
                 repair_actions=[],
                 metadata={"error": str(e)}
             )
+
+    def _remove_less_query_relevant_pairs(
+        self,
+        context_segments: List[str],
+        violations: List[Dict[str, Any]],
+        query: str,
+        repair_actions: List[str]
+    ) -> Optional[List[str]]:
+        if not query or not violations:
+            return None
+
+        remove_indices = set()
+        for violation in violations:
+            pair_indices = violation.get('pair_indices')
+            if not pair_indices and 'pair' in violation:
+                pair_indices = violation.get('pair')
+            if not isinstance(pair_indices, (list, tuple)) or len(pair_indices) != 2:
+                continue
+
+            i, j = pair_indices
+            if not isinstance(i, int) or not isinstance(j, int):
+                continue
+            if i < 0 or j < 0 or i >= len(context_segments) or j >= len(context_segments):
+                continue
+
+            score_i = self._calculate_query_relevance(context_segments[i], query)
+            score_j = self._calculate_query_relevance(context_segments[j], query)
+            remove_index = i if score_i <= score_j else j
+            remove_indices.add(remove_index)
+            repair_actions.append(
+                f"Removed less query-relevant context segment {remove_index} "
+                f"from low-similarity pair ({i}, {j})"
+            )
+
+        if not remove_indices:
+            return None
+        return [
+            segment for index, segment in enumerate(context_segments)
+            if index not in remove_indices and segment.strip()
+        ]
     
     def _identify_main_topic(self, segments: List[str]) -> str:
         if not segments:
@@ -821,6 +873,9 @@ class FormatRepairer:
             base_score = min(base_score + 0.2, 1.0)
         
         return base_score
+
+    def _calculate_query_relevance(self, segment: str, query: str) -> float:
+        return self._calculate_semantic_similarity(segment, query)
     
     def _reorder_by_semantic_similarity(self, segments: List[str]) -> Tuple[List[str], List[str]]:
         actions = []

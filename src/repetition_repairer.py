@@ -34,7 +34,9 @@ class RepetitionRepairer:
             redundant_actions = details.get('redundant_actions', 0)
             
             if redundant_actions > 0:
-                cached_result = self._get_cached_result(action_signature)
+                cached_result = details.get('cached_output')
+                if cached_result is None:
+                    cached_result = self._get_cached_result(action_signature)
                 if cached_result is not None:
                     repair_actions.append(f"Used cached result for action {action_signature}")
                     repaired_output = cached_result
@@ -59,12 +61,14 @@ class RepetitionRepairer:
             )
         except Exception as e:
             logger.error(f"Software behavior redundancy repair failed: {e}")
+            if self.config.strict_paper_mode or not self.config.allow_lightweight_fallbacks:
+                raise
         return RepairResult(
             success=False,
             original_output=str(output),
             repaired_output=str(output),
             repair_actions=[],
-                metadata={"error": str(e)}
+            metadata={"error": str(e)}
         )
     
     def repair_semantic_redundancy(self, output: Any, detection_result: DetectionResult) -> RepairResult:
@@ -72,8 +76,25 @@ class RepetitionRepairer:
             output_str = str(output)
             details = detection_result.details
             redundancy_analysis = details.get('redundancy_analysis', {})
+            bypass_reused_history = redundancy_analysis.get('external', {}).get(
+                'already_repaired_by_invocation_bypass',
+                False
+            )
             
             repair_actions = []
+            if bypass_reused_history:
+                repair_actions.append("Skipped semantic repair because invocation bypass already reused history")
+                return RepairResult(
+                    success=True,
+                    original_output=output_str,
+                    repaired_output=output_str,
+                    repair_actions=repair_actions,
+                    metadata={
+                        "repair_strategy": "semantic_redundancy_bypass",
+                        "redundancy_analysis": redundancy_analysis,
+                        "total_repairs": len(repair_actions)
+                    }
+                )
             
             cycle_terminated_output, cycle_actions = self._apply_cycle_termination(
                 output_str, redundancy_analysis
@@ -104,13 +125,15 @@ class RepetitionRepairer:
             )
         except Exception as e:
             logger.error(f"Semantic redundancy repair failed: {e}")
+            if self.config.strict_paper_mode or not self.config.allow_lightweight_fallbacks:
+                raise
         return RepairResult(
             success=False,
             original_output=str(output),
             repaired_output=str(output),
             repair_actions=[],
-                metadata={"error": str(e)}
-            )
+            metadata={"error": str(e)}
+        )
     
     def _get_cached_result(self, action_signature: str) -> Any:
         return self.action_result_cache.get(action_signature)
@@ -129,6 +152,9 @@ class RepetitionRepairer:
         
         external_redundancy = redundancy_analysis.get('external', {})
         if external_redundancy.get('detected', False):
+            if external_redundancy.get('already_repaired_by_invocation_bypass', False):
+                actions.append("Skipped external rollback because invocation bypass already reused history")
+                return output, actions
             rollback_output, rollback_actions = self.cycle_detector.rollback_to_non_redundant(
                 output, external_redundancy
             )
@@ -207,16 +233,9 @@ class CycleDetector:
         redundant_history = external_redundancy.get('redundant_history', [])
         
         if redundant_history:
-            sentences = re.split(r'[.!?]+', output)
-            sentences = [s.strip() for s in sentences if s.strip()]
-            
-            if len(sentences) > 1:
-                keep_count = len(sentences) // 2
-                rolled_back_sentences = sentences[:keep_count]
-                repaired_output = '. '.join(rolled_back_sentences) + '.'
-                actions.append(f"Rolled back to non-redundant version: kept {keep_count}/{len(sentences)} sentences")
-            else:
-                repaired_output = output
+            previous = redundant_history[-1]
+            repaired_output = str(previous.get('processed_output', previous.get('original_output', output)))
+            actions.append("Rolled back to previous processed output for external redundancy")
         else:
             repaired_output = output
         

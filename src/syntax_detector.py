@@ -2,6 +2,8 @@
 import ast
 import dis
 import re
+import json
+import xml.etree.ElementTree as ET
 import token
 import tokenize
 import io
@@ -27,37 +29,36 @@ class SyntaxDetector:
             output_str = str(output)
             violations = []
             severity = 0.0
-            
-            # Check if output looks like code
-            if not self._looks_like_code(output_str):
+
+            parser_results = self._run_parser_registry(output_str, func_name)
+            if not parser_results:
                 return DetectionResult(
                     error_type=ErrorType.SYNTAX_PARSER_MISALIGNMENT,
                     detected=False,
                     severity=0.0,
-                    details={"reason": "Output does not appear to be code"}
+                    details={"reason": "Output does not appear to target a parser/compiler"}
                 )
-            
-            # Use compiler/parser syntax validation as described in paper
-            try:
-                # Try to compile the code to check syntax
-                compile(output_str, '<string>', 'exec')
-                # If compilation succeeds, no syntax errors
+
+            successful = [item for item in parser_results if item["success"]]
+            if successful:
                 return DetectionResult(
                     error_type=ErrorType.SYNTAX_PARSER_MISALIGNMENT,
                     detected=False,
                     severity=0.0,
-                    details={"reason": "Code compiles successfully"}
+                    details={
+                        "reason": "At least one applicable parser/compiler accepted the output",
+                        "parser_results": parser_results,
+                        "accepted_by": [item["parser"] for item in successful]
+                    }
                 )
-            except SyntaxError as e:
-                # Syntax error detected
+
+            for item in parser_results:
                 violations.append({
                     'type': 'syntax_error',
-                    'message': str(e),
-                    'line': e.lineno,
-                    'offset': e.offset,
-                    'text': e.text
+                    'parser': item['parser'],
+                    'message': item.get('error', 'parser rejected output'),
                 })
-                severity = 0.8  # High severity for syntax errors
+            severity = 0.8
             
             # Additional AST-based validation for specific error types
             if self.config.enable_ast_analysis:
@@ -76,7 +77,8 @@ class SyntaxDetector:
                     "violations": violations,
                     "total_issues": len(violations),
                     "output_length": len(output_str),
-                    "detection_method": "compiler_validation"
+                    "detection_method": "multi_parser_registry",
+                    "parser_results": parser_results
                 },
                 suggested_repair="ast_refinement" if detected else None
             )
@@ -89,6 +91,64 @@ class SyntaxDetector:
                 severity=0.0,
                 details={"error": str(e)}
             )
+
+    def _run_parser_registry(self, text: str, func_name: str = "") -> List[Dict[str, Any]]:
+        candidates = self._infer_parser_candidates(text, func_name)
+        results = []
+        for parser_name in candidates:
+            try:
+                if parser_name == "python":
+                    compile(text, '<string>', 'exec')
+                elif parser_name == "json":
+                    json.loads(text)
+                elif parser_name == "yaml":
+                    import yaml
+                    yaml.safe_load(text)
+                elif parser_name == "xml":
+                    ET.fromstring(text)
+                elif parser_name == "markdown_code_fence":
+                    self._validate_markdown_code_fence(text)
+                else:
+                    continue
+                results.append({"parser": parser_name, "success": True})
+            except Exception as exc:
+                results.append({"parser": parser_name, "success": False, "error": str(exc)})
+        return results
+
+    def _infer_parser_candidates(self, text: str, func_name: str = "") -> List[str]:
+        stripped = text.strip()
+        lowered_name = func_name.lower()
+        if any(token in lowered_name for token in ("json", "schema")):
+            return ["json"]
+        if any(token in lowered_name for token in ("xml", "html")):
+            return ["xml"]
+        if any(token in lowered_name for token in ("yaml", "yml")):
+            return ["yaml"]
+        if any(token in lowered_name for token in ("markdown", "code_fence", "fence")):
+            return ["markdown_code_fence"]
+        if any(token in lowered_name for token in ("python", "code", "compile", "ast")):
+            return ["python"]
+
+        candidates = []
+        if stripped.startswith(("{", "[")):
+            return ["json"]
+        if stripped.startswith("<") and stripped.endswith(">"):
+            return ["xml"]
+        if stripped.startswith("```") or stripped.count("```") == 1:
+            return ["markdown_code_fence"]
+        if re.search(r'^\s*[\w.-]+\s*:\s+', stripped, re.MULTILINE):
+            return ["yaml"]
+        if self._looks_like_code(stripped):
+            candidates.append("python")
+        return list(dict.fromkeys(candidates))
+
+    def _validate_markdown_code_fence(self, text: str):
+        if text.count("```") % 2 != 0:
+            raise ValueError("unmatched markdown code fence")
+        for match in re.finditer(r'```([^\n`]*)\n', text):
+            language = match.group(1).strip()
+            if language and not re.match(r'^[A-Za-z0-9_+.-]+$', language):
+                raise ValueError(f"invalid code fence language identifier: {language}")
     
     def detect_lexical_inconsistency(self, output: Any, func_name: str) -> DetectionResult:
         
@@ -165,38 +225,7 @@ class SyntaxDetector:
         violations = []
         
         try:
-            # Try to parse with AST
-            tree = ast.parse(text)
-            
-            # AST visitor to detect specific violations
-            class ASTVisitor(ast.NodeVisitor):
-                def __init__(self):
-                    self.violations = []
-                
-                def visit_FunctionDef(self, node):
-                    # Check for functions without return statements
-                    has_return = False
-                    for child in ast.walk(node):
-                        if isinstance(child, ast.Return):
-                            has_return = True
-                            break
-                    
-                    if not has_return and len(node.body) > 0:
-                        self.violations.append({
-                            'type': 'missing_return',
-                            'line': node.lineno,
-                            'function': node.name
-                        })
-                
-                def visit_Name(self, node):
-                    # Check for undefined variable usage (basic check)
-                    if node.id not in ['True', 'False', 'None', 'self']:
-                        # This is a simplified check - in practice would need scope analysis
-                        pass
-            
-            visitor = ASTVisitor()
-            visitor.visit(tree)
-            violations.extend(visitor.violations)
+            ast.parse(text)
             
         except SyntaxError as e:
             # AST parsing failed - this is already caught by compiler validation
@@ -212,11 +241,7 @@ class SyntaxDetector:
         scripts = {}
         for char in text:
             if char.isalpha():
-                try:
-                    script = unicodedata.script(char)
-                except AttributeError:
-                    # Fallback for older Python versions
-                    script = unicodedata.category(char)
+                script = self._unicode_script(char)
                 scripts[script] = scripts.get(script, 0) + 1
         
         # Check for mixed scripts (excluding common mixed scenarios)
@@ -237,6 +262,29 @@ class SyntaxDetector:
             violations.extend(ngram_issues)
         
         return violations
+
+    def _unicode_script(self, char: str) -> str:
+        codepoint = ord(char)
+        if 0x0041 <= codepoint <= 0x024F:
+            return 'Latn'
+        if 0x4E00 <= codepoint <= 0x9FFF:
+            return 'Hani'
+        if 0x3040 <= codepoint <= 0x309F:
+            return 'Hira'
+        if 0x30A0 <= codepoint <= 0x30FF:
+            return 'Kana'
+        if 0xAC00 <= codepoint <= 0xD7AF:
+            return 'Hang'
+        if 0x0600 <= codepoint <= 0x06FF:
+            return 'Arab'
+        if 0x0400 <= codepoint <= 0x04FF:
+            return 'Cyrl'
+        name = unicodedata.name(char, '')
+        if 'LATIN' in name:
+            return 'Latn'
+        if 'CJK' in name or 'IDEOGRAPH' in name:
+            return 'Hani'
+        return 'Other'
     
     def _detect_spelling_standard_inconsistency(self, text: str) -> List[Dict[str, Any]]:
        
@@ -385,11 +433,7 @@ class SyntaxDetector:
         scripts = set()
         for char in text:
             if char.isalpha():
-                try:
-                    script = unicodedata.script(char)
-                except AttributeError:
-                    # Fallback for older Python versions
-                    script = unicodedata.category(char)
+                script = self._unicode_script(char)
                 scripts.add(script)
         
         # Map scripts to languages

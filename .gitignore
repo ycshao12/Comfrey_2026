@@ -38,6 +38,10 @@ Thumbs.db
 
 # Logs
 *.log
+key.txt
+../key.txt
+api_url.txt
+../api_url.txt
 
 # Testing
 .pytest_cache/

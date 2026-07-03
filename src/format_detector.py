@@ -4,6 +4,7 @@ Detects format-related errors in LLM outputs.
 """
 
 import json
+import os
 import re
 import xml.etree.ElementTree as ET
 from typing import Dict, List, Any, Optional, Tuple
@@ -12,6 +13,7 @@ from enum import Enum
 
 from .types import DetectionResult, ErrorType
 from .config import ComfreyConfig
+from .embedding_provider import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ class FormatDetector:
     
     def __init__(self, config: ComfreyConfig):
         self.config = config
+        self.embedding_provider = EmbeddingProvider(config)
         self._init_nlp_resources()
     
     def _init_nlp_resources(self):
@@ -34,11 +37,39 @@ class FormatDetector:
         self.nlp = None
         self.enchant_dict = None
         
-        # Skip spaCy initialization to avoid numpy compatibility issues
-        logger.info("Using basic sentence analysis without spaCy")
-        
-        # Skip enchant initialization
-        logger.info("Using basic word validation without enchant")
+        try:
+            import spacy
+            self.nlp = spacy.load("en_core_web_sm")
+        except Exception as exc:
+            if self.config.strict_paper_mode and not self.config.allow_lightweight_fallbacks:
+                raise RuntimeError("Paper mode requires spaCy model en_core_web_sm for syntactic segmentation checks") from exc
+            logger.info(f"Using basic sentence analysis without spaCy: {exc}")
+
+        try:
+            import enchant
+            self.enchant_dict = enchant.Dict("en_US")
+        except Exception as exc:
+            self._configure_homebrew_enchant()
+            try:
+                import enchant
+                self.enchant_dict = enchant.Dict("en_US")
+                return
+            except Exception:
+                pass
+            if self.config.strict_paper_mode and not self.config.allow_lightweight_fallbacks:
+                raise RuntimeError("Paper mode requires pyenchant/en_US dictionary for word-boundary checks") from exc
+            logger.info(f"Using basic word validation without enchant: {exc}")
+
+    def _configure_homebrew_enchant(self):
+        if os.environ.get("PYENCHANT_LIBRARY_PATH"):
+            return
+        for candidate in (
+            "/opt/homebrew/lib/libenchant-2.dylib",
+            "/usr/local/lib/libenchant-2.dylib",
+        ):
+            if os.path.exists(candidate):
+                os.environ["PYENCHANT_LIBRARY_PATH"] = candidate
+                return
     
     def detect_template_discrepancy(self, output: Any, func_name: str) -> DetectionResult:
         """
@@ -1314,30 +1345,14 @@ class FormatDetector:
     def _compute_tfidf_similarity(self, text1: str, text2: str) -> float:
         """Compute TF-IDF similarity between two texts"""
         try:
-            # Skip sklearn to avoid numpy compatibility issues
-            # from sklearn.feature_extraction.text import TfidfVectorizer
-            # from sklearn.metrics.pairwise import cosine_similarity
-            
-            # vectorizer = TfidfVectorizer(stop_words='english', max_features=1000)
-            # tfidf_matrix = vectorizer.fit_transform([text1, text2])
-            # similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
-            
-            # return float(similarity)
-            
-            # Fallback to simple word overlap
-            words1 = set(text1.lower().split())
-            words2 = set(text2.lower().split())
-            
-            if not words1 or not words2:
-                return 0.0
-            
-            intersection = words1.intersection(words2)
-            union = words1.union(words2)
-            
-            return len(intersection) / len(union) if union else 0.0
-            
-        except ImportError:
-            # Fallback to simple word overlap
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.metrics.pairwise import cosine_similarity
+
+            vectorizer = TfidfVectorizer(stop_words='english', max_features=1000)
+            tfidf_matrix = vectorizer.fit_transform([text1, text2])
+            similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
+            return float(similarity)
+        except Exception:
             words1 = set(text1.lower().split())
             words2 = set(text2.lower().split())
             
@@ -1357,19 +1372,11 @@ class FormatDetector:
         for low overhead design.
         """
         try:
-            # Use sentence-transformers for embedding computation
-            from sentence_transformers import SentenceTransformer
+            return float(self.embedding_provider.similarity(text1, text2))
             
-            # Use a lightweight model for low overhead (as mentioned in paper)
-            model_name = 'all-MiniLM-L6-v2'  # ~80MB model, similar to 0.6B parameter model
-            model = SentenceTransformer(model_name)
-            
-            embeddings = model.encode([text1, text2])
-            similarity = self._cosine_similarity(embeddings[0], embeddings[1])
-            
-            return float(similarity)
-            
-        except ImportError:
+        except Exception:
+            if self.config.strict_paper_mode or not self.config.allow_lightweight_fallbacks:
+                raise
             # Fallback to TF-IDF similarity
             return self._compute_tfidf_similarity(text1, text2)
     

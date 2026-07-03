@@ -45,6 +45,23 @@ class ScenarioRequirementManager:
     
     def get_all_requirements(self) -> List[ScenarioRequirement]:
         return self.scenario_requirements.copy()
+
+    def get_scenario_requirements(self, target_directory: str = None) -> List[Dict[str, Any]]:
+        """Return the paper's scenario-driven requirements in serializable form."""
+        return [
+            {
+                'name': requirement.name,
+                'dimension': requirement.dimension.value,
+                'description': requirement.description,
+                'detection_criteria': requirement.detection_criteria,
+                'validation_rules': requirement.validation_rules,
+                'priority': requirement.priority,
+                'applicable_contexts': requirement.applicable_contexts,
+                'source': 'application_scenario',
+                'target_directory': target_directory
+            }
+            for requirement in self.scenario_requirements
+        ]
     
     def _initialize_scenario_requirements(self) -> List[ScenarioRequirement]:
         requirements = []
@@ -91,50 +108,6 @@ class ScenarioRequirementManager:
             applicable_contexts=["rag_systems", "context_construction", "information_retrieval"]
         ))
         
-        requirements.append(ScenarioRequirement(
-            name="cohesive_context_information",
-            dimension=ScenarioDimension.FORMAT,
-            description="Context segments must maintain semantic coherence",
-            detection_criteria={
-                "coherence_threshold": 0.7,
-                "topic_consistency": True,
-                "logical_flow": True,
-                "transition_smoothness": 0.5,
-                "max_coherence_gap": 0.4
-            },
-            validation_rules=[
-                "Adjacent context segments should be semantically coherent",
-                "Topic transitions should be smooth",
-                "Logical flow should be maintained",
-                "Contradictory information should be avoided"
-            ],
-            priority=1,
-            applicable_contexts=["rag_systems", "context_construction", "document_assembly"]
-        ))
-        
-
-        requirements.append(ScenarioRequirement(
-            name="parser_compatible_grammar",
-            dimension=ScenarioDimension.SYNTAX,
-            description="Output must be compatible with target parsers",
-            detection_criteria={
-                "target_parsers": ["python", "json", "xml", "yaml"],
-                "syntax_validation": True,
-                "grammar_compliance": True,
-                "parser_error_tolerance": 0.0,
-                "compilation_success_required": True
-            },
-            validation_rules=[
-                "Output must parse successfully with target parser",
-                "Syntax errors should be eliminated",
-                "Grammar rules must be followed",
-                "Parser-specific conventions should be respected"
-            ],
-            priority=1,
-            applicable_contexts=["code_generation", "structured_output", "compilation", "parsing"]
-        ))
-        
-
         requirements.append(ScenarioRequirement(
             name="consistent_lexical_features",
             dimension=ScenarioDimension.SYNTAX,
@@ -197,6 +170,24 @@ class ScenarioRequirementManager:
             ],
             priority=2,
             applicable_contexts=["text_generation", "content_creation", "summarization", "enumeration"]
+        ))
+
+        requirements.append(ScenarioRequirement(
+            name="contextual_semantic_redundancy",
+            dimension=ScenarioDimension.REPETITION,
+            description="Avoid responses that semantically repeat the prompt or contextual input",
+            detection_criteria={
+                "semantic_similarity_threshold": 0.7,
+                "check_prompt_response_similarity": True,
+                "check_context_response_similarity": True
+            },
+            validation_rules=[
+                "Response should not simply restate the prompt",
+                "Response should not duplicate contextual input",
+                "Generated content should add new useful information"
+            ],
+            priority=2,
+            applicable_contexts=["text_generation", "rag_systems", "agent_response", "summarization"]
         ))
         
         return requirements
@@ -276,6 +267,8 @@ class ScenarioRequirementManager:
                     result = self._validate_no_redundant_behavior(output, requirement, context)
                 elif requirement.name == "succinct_content":
                     result = self._validate_succinct_content(output, requirement, context)
+                elif requirement.name == "contextual_semantic_redundancy":
+                    result = self._validate_contextual_semantic_redundancy(output, requirement, context)
                 else:
                     result['details']['error'] = f"Unknown requirement: {requirement.name}"
                     
@@ -489,3 +482,43 @@ class ScenarioRequirementManager:
             result['details']['total_sentences'] = len(sentences)
         
         return result 
+
+    def _validate_contextual_semantic_redundancy(self, output: Any, requirement: ScenarioRequirement, context: Dict[str, Any]) -> Dict[str, Any]:
+        result = {
+            'requirement_name': requirement.name,
+            'dimension': requirement.dimension.value,
+            'passed': True,
+            'confidence': 0.8,
+            'violations': [],
+            'details': {}
+        }
+
+        context = context or {}
+        output_str = str(output)
+        prompt_text = (
+            context.get('prompt')
+            or context.get('query')
+            or context.get('user_input')
+            or context.get('context_text')
+            or ''
+        )
+
+        if not prompt_text:
+            result['details']['note'] = "No prompt or context text provided for contextual redundancy check"
+            return result
+
+        output_words = set(output_str.lower().split())
+        prompt_words = set(str(prompt_text).lower().split())
+        similarity = (
+            len(output_words.intersection(prompt_words)) / len(output_words.union(prompt_words))
+            if output_words and prompt_words else 0.0
+        )
+
+        threshold = requirement.detection_criteria.get('semantic_similarity_threshold', 0.7)
+        if similarity > threshold:
+            result['violations'].append(f"High prompt-response similarity: {similarity:.2f}")
+            result['passed'] = False
+            result['confidence'] = 1 - similarity
+
+        result['details']['contextual_similarity'] = similarity
+        return result

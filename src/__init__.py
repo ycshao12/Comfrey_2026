@@ -22,6 +22,7 @@ from .config import ComfreyConfig
 from .types import ErrorType, DetectionResult, RepairResult
 from .syntax_detector import SyntaxDetector
 from .format_detector import FormatDetector
+from .embedding_provider import EmbeddingProvider
 
 __version__ = "1.0.0"
 __author__ = "Comfrey Team"
@@ -34,5 +35,6 @@ __all__ = [
     "DetectionResult",
     "RepairResult",
     "SyntaxDetector",
-    "FormatDetector"
+    "FormatDetector",
+    "EmbeddingProvider"
 ]
